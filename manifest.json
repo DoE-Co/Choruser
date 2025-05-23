@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Instant Choruser",
+  "version": "0.1",
+  "description": "Loop and mimic Japanese subtitles",
+  "permissions": ["scripting", "tabs", "activeTab"],
+  "host_permissions": ["*://*.youtube.com/*"],
+  "action": {
+    "default_title": "Instant Choruser",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "./assets/icon16.png",
+      "48": "./assets/icon48.png",
+      "128": "./assets/icon128.png"
+    },
+    "js": ["./scripts/popup.js"],
+    "css": ["./css/popup.css"]
+  },
+  "background": {
+    "service_worker": "./scripts/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["./scripts/content.js"],
+      "css": ["./css/content.css"]
+    }
+  ]
+}
