@@ -1,276 +1,167 @@
+// Fixed content script with proper message handling
+
+let subtitleExtractor; // Declare at top level
+
+// Listen for messages from popup/background
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === "startChorus") {
+    console.log('YouTube Subtitle Extractor activated via message');
+    
+    // Create new instance
+    subtitleExtractor = new YouTubeSubtitleExtractor();
+    
+    // Make it globally available
+    window.subtitleExtractor = subtitleExtractor;
+    
+    // Send response back to confirm it worked
+    sendResponse({success: true, message: "Subtitle extractor started"});
+    
+  } else {
+    console.log("Received unknown message:", message);
+    sendResponse({success: false, message: "Unknown action"});
+  }
+  
+  // Important: return true to indicate we'll send response asynchronously
+  return true;
+});
+
 class YouTubeSubtitleExtractor {
   constructor() {
-    // Rate limiting and caching
-    this.subtitleCache = new Map();
-    this.lastRequestTime = 0;
-    this.minRequestInterval = 2000; // 2 seconds between requests
-    this.requestQueue = [];
-    this.isProcessingQueue = false;
-    
+    console.log('YouTubeSubtitleExtractor constructor called');
     this.init();
   }
 
   init() {
+    console.log('Initializing subtitle extractor...');
+    
+    // Wait for YouTube to load, then try to extract subtitles
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => this.extractSubtitles());
     } else {
       this.extractSubtitles();
     }
+
+    // Also listen for navigation changes (YouTube is a single-page app)
     this.observeUrlChanges();
   }
 
-  // Extract video ID for caching
-  extractVideoId(url) {
-    const match = url.match(/[?&]v=([^&]+)/);
-    return match ? match[1] : null;
-  }
-
-  // Queue system to prevent concurrent requests
-  async queueRequest(requestFn) {
-    return new Promise((resolve, reject) => {
-      this.requestQueue.push({ requestFn, resolve, reject });
-      this.processQueue();
-    });
-  }
-
-  async processQueue() {
-    if (this.isProcessingQueue || this.requestQueue.length === 0) {
-      return;
-    }
-
-    this.isProcessingQueue = true;
-
-    while (this.requestQueue.length > 0) {
-      const { requestFn, resolve, reject } = this.requestQueue.shift();
-
-      try {
-        // Throttle requests
-        const now = Date.now();
-        const timeSinceLastRequest = now - this.lastRequestTime;
-        
-        if (timeSinceLastRequest < this.minRequestInterval) {
-          const waitTime = this.minRequestInterval - timeSinceLastRequest;
-          console.log(`Throttling: waiting ${waitTime}ms before next request`);
-          await new Promise(r => setTimeout(r, waitTime));
-        }
-
-        this.lastRequestTime = Date.now();
-        const result = await requestFn();
-        resolve(result);
-
-      } catch (error) {
-        reject(error);
-      }
-    }
-
-    this.isProcessingQueue = false;
-  }
-
-  async fetchSubtitleContent(baseUrl, retryCount = 0) {
-    const videoId = this.extractVideoId(baseUrl);
-    
-    // Check cache first
-    if (videoId && this.subtitleCache.has(videoId)) {
-      console.log('Using cached subtitles for video:', videoId);
-      return this.subtitleCache.get(videoId);
-    }
-
-    // Queue the request to prevent concurrent fetches
-    return this.queueRequest(async () => {
-      return this.performSubtitleFetch(baseUrl, videoId, retryCount);
-    });
-  }
-
-  async performSubtitleFetch(baseUrl, videoId, retryCount = 0) {
-    const url = baseUrl + '&fmt=json3';
-    const maxRetries = 3;
-    
-    console.log(`Fetching subtitles (attempt ${retryCount + 1}):`, url);
-
-    try {
-      const response = await fetch(url);
-      
-      // Handle specific rate limiting responses
-      if (response.status === 429) {
-        console.warn('Rate limited by YouTube');
-        
-        if (retryCount < maxRetries) {
-          // Exponential backoff with jitter
-          const baseDelay = Math.pow(2, retryCount) * 1000;
-          const jitter = Math.random() * 1000; // Add randomness
-          const delay = baseDelay + jitter;
-          
-          console.log(`Retrying in ${Math.round(delay)}ms due to rate limit`);
-          this.showRateLimitWarning(delay);
-          
-          await new Promise(resolve => setTimeout(resolve, delay));
-          return this.performSubtitleFetch(baseUrl, videoId, retryCount + 1);
-        } else {
-          throw new Error('Rate limited - maximum retries exceeded');
-        }
-      }
-
-      // Handle other HTTP errors
-      if (!response.ok) {
-        if (response.status >= 500 && retryCount < maxRetries) {
-          // Server errors - retry with backoff
-          const delay = Math.pow(2, retryCount) * 1000;
-          console.log(`Server error ${response.status}, retrying in ${delay}ms`);
-          
-          await new Promise(resolve => setTimeout(resolve, delay));
-          return this.performSubtitleFetch(baseUrl, videoId, retryCount + 1);
-        }
-        
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const subtitles = this.parseSubtitleData(data);
-      
-      // Cache successful results
-      if (videoId && subtitles.length > 0) {
-        this.subtitleCache.set(videoId, subtitles);
-        console.log(`Cached ${subtitles.length} subtitles for video:`, videoId);
-        
-        // Limit cache size (keep last 50 videos)
-        if (this.subtitleCache.size > 50) {
-          const firstKey = this.subtitleCache.keys().next().value;
-          this.subtitleCache.delete(firstKey);
-        }
-      }
-      
-      return subtitles;
-
-    } catch (error) {
-      // Handle network errors
-      if (this.isRetryableError(error) && retryCount < maxRetries) {
-        const delay = Math.pow(2, retryCount) * 1000;
-        console.log(`Network error, retrying in ${delay}ms:`, error.message);
-        
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return this.performSubtitleFetch(baseUrl, videoId, retryCount + 1);
-      }
-      
-      console.error('Failed to fetch subtitles:', error);
-      throw error;
-    }
-  }
-
-  parseSubtitleData(data) {
-    return data.events
-      .filter(event => {
-        if (!event.segs) return false;
-        const text = event.segs.map(seg => seg.utf8).join('').trim();
-        return text.length > 0 && text !== '\n' && text !== ' ';
-      })
-      .map(event => ({
-        startTime: event.tStartMs / 1000,
-        duration: event.dDurationMs ? event.dDurationMs / 1000 : 0,
-        endTime: event.tStartMs / 1000 + (event.dDurationMs ? event.dDurationMs / 1000 : 0),
-        text: event.segs.map(seg => seg.utf8).join('').trim()
-      }));
-  }
-
-  isRetryableError(error) {
-    return error.name === 'TypeError' || 
-           error.message.includes('network') ||
-           error.message.includes('timeout') ||
-           error.message.includes('fetch');
-  }
-
-  showRateLimitWarning(retryDelay = 0) {
-    // Remove existing warning
-    const existing = document.getElementById('rate-limit-warning');
-    if (existing) existing.remove();
-
-    const warning = document.createElement('div');
-    warning.id = 'rate-limit-warning';
-    warning.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      background: #ff9900;
-      color: white;
-      padding: 10px 15px;
-      border-radius: 5px;
-      z-index: 99999;
-      font-family: Arial, sans-serif;
-      font-size: 14px;
-      border: 2px solid #cc7700;
-    `;
-    
-    if (retryDelay > 0) {
-      warning.innerHTML = `⚠️ Rate limited - retrying in ${Math.round(retryDelay/1000)}s`;
-    } else {
-      warning.innerHTML = '⚠️ Too many requests - please wait';
-    }
-    
-    document.body.appendChild(warning);
-    
-    // Auto-remove after delay + 2 seconds
-    const removeDelay = retryDelay > 0 ? retryDelay + 2000 : 5000;
-    setTimeout(() => {
-      if (warning.parentNode) warning.remove();
-    }, removeDelay);
-  }
-
-  // Clear cache when user navigates away (optional)
-  clearCache() {
-    this.subtitleCache.clear();
-    console.log('Subtitle cache cleared');
-  }
-
-  // Rest of the class methods remain the same...
+  // Method 1: Get subtitle tracks from ytInitialPlayerResponse
   getSubtitlesFromPlayerResponse() {
     console.log('Checking for ytInitialPlayerResponse...');
     
     if (window.ytInitialPlayerResponse) {
+      console.log('Found ytInitialPlayerResponse');
+      
       const captions = window.ytInitialPlayerResponse.captions;
       if (captions && captions.playerCaptionsTracklistRenderer) {
         const tracks = captions.playerCaptionsTracklistRenderer.captionTracks;
+        console.log('All available tracks:', tracks);
+        
+        // Filter for Japanese subtitles (check multiple possible language codes)
         const japaneseTracks = tracks.filter(track => 
           track.languageCode === 'ja' || 
           track.languageCode === 'ja-JP' ||
           track.languageCode.startsWith('ja')
         );
+        console.log('Japanese tracks found:', japaneseTracks);
+        
         return japaneseTracks;
       }
     }
+    
+    console.log('No subtitle data found in ytInitialPlayerResponse');
     return null;
   }
 
   async extractSubtitles() {
     console.log('Starting subtitle extraction...');
     
-    try {
-      const tracks = this.getSubtitlesFromPlayerResponse();
+    // Try Method 1 first
+    const tracks = this.getSubtitlesFromPlayerResponse();
+    
+    if (tracks && tracks.length > 0) {
+      console.log('Found Japanese subtitle tracks:', tracks);
       
-      if (tracks && tracks.length > 0) {
-        const subtitles = await this.fetchSubtitleContent(tracks[0].baseUrl);
+      // Get the first Japanese track
+      const track = tracks[0];
+      console.log('Using track:', track);
+      
+      // Fetch the actual subtitle content
+      try {
+        const subtitles = await this.fetchSubtitleContent(track.baseUrl);
+        console.log('Fetched subtitles:', subtitles);
+        
+        // Now you have the subtitle data!
         this.processSubtitles(subtitles);
-      } else {
-        console.log('No Japanese subtitles found - trying fallback method');
-        this.tryWhisper();
+        
+      } catch (error) {
+        console.error('Error fetching subtitles:', error);
       }
-    } catch (error) {
-      if (error.message.includes('Rate limited')) {
-        console.warn('Subtitle extraction failed due to rate limiting');
-      } else {
-        console.error('Error during subtitle extraction:', error);
-      }
+    } else {
+      console.log('No Japanese subtitles found');
+      
+      // Try whisper as fallback
+      this.tryWhisper();
     }
   }
 
+  async fetchSubtitleContent(baseUrl) {
+    const url = baseUrl + '&fmt=json3';
+    console.log('Fetching from:', url);
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    // Parse the subtitle events with improved filtering
+    const subtitles = data.events
+      .filter(event => {
+        // Only include events with text segments
+        if (!event.segs) return false;
+        
+        // Get the combined text
+        const text = event.segs.map(seg => seg.utf8).join('').trim();
+        
+        // Filter out empty entries, newlines, and pure whitespace
+        return text.length > 0 && text !== '\n' && text !== ' ';
+      })
+      .map(event => ({
+        startTime: event.tStartMs / 1000, // Start time in seconds
+        duration: event.dDurationMs ? event.dDurationMs / 1000 : 0, // Handle NaN duration
+        endTime: event.tStartMs / 1000 + (event.dDurationMs ? event.dDurationMs / 1000 : 0),
+        text: event.segs.map(seg => seg.utf8).join('').trim() // Combined and trimmed text
+      }));
+    
+    return subtitles;
+  }
+
   processSubtitles(subtitles) {
+    console.log('Processing subtitles...');
     console.log(`Found ${subtitles.length} valid Japanese subtitle segments`);
+    
+    // Example: Display first few subtitles with better formatting
+    console.log('First 10 subtitle segments:');
+    subtitles.slice(0, 10).forEach((subtitle, index) => {
+      console.log(`${index + 1}. [${subtitle.startTime.toFixed(1)}s - ${subtitle.endTime.toFixed(1)}s] ${subtitle.text}`);
+    });
+    
+    // Create a simple UI element to show success
     this.createSubtitleUI(subtitles);
+    
+    // Store subtitles for later use
     this.currentSubtitles = subtitles;
   }
 
   createSubtitleUI(subtitles) {
-    const existingUI = document.getElementById('subtitle-extractor-ui');
-    if (existingUI) existingUI.remove();
+    console.log('Creating subtitle UI...');
     
+    // Remove existing UI if it exists
+    const existingUI = document.getElementById('subtitle-extractor-ui');
+    if (existingUI) {
+      console.log('Removing existing UI');
+      existingUI.remove();
+    }
+    
+    // Create a simple UI element
     const ui = document.createElement('div');
     ui.id = 'subtitle-extractor-ui';
     ui.style.cssText = `
@@ -284,44 +175,147 @@ class YouTubeSubtitleExtractor {
       z-index: 99999;
       font-family: Arial, sans-serif;
       font-size: 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      border: 2px solid black;
       cursor: pointer;
     `;
-    ui.innerHTML = `🎌 Found ${subtitles.length} Japanese subtitles (cached: ${this.subtitleCache.size})`;
+    ui.innerHTML = `🎌 Found ${subtitles.length} Japanese subtitles`;
     
+    console.log('UI element created, adding to page...');
+    
+    // Add click handler to show subtitle list
+    ui.addEventListener('click', () => {
+      console.log('Subtitle UI clicked');
+      this.showSubtitleList(subtitles);
+    });
+    
+    // Add to page
     document.body.appendChild(ui);
+    console.log('UI element added to page');
     
+    // Auto-hide after 10 seconds (longer for testing)
     setTimeout(() => {
-      if (ui.parentNode) ui.remove();
+      if (ui.parentNode) {
+        ui.remove();
+        console.log('UI auto-removed after 10 seconds');
+      }
     }, 10000);
   }
 
+  showSubtitleList(subtitles) {
+    console.log('Showing subtitle list modal');
+    
+    // Create a modal to show subtitle list
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      z-index: 99998;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `;
+    
+    const content = document.createElement('div');
+    content.style.cssText = `
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      max-width: 800px;
+      max-height: 600px;
+      overflow-y: auto;
+      font-family: Arial, sans-serif;
+    `;
+    
+    let html = `
+      <h3>Japanese Subtitles (${subtitles.length} segments)</h3>
+      <p>Click on any subtitle to see timestamp:</p>
+      <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px;">
+    `;
+    
+    subtitles.slice(0, 50).forEach((subtitle, index) => {
+      html += `
+        <div style="margin-bottom: 8px; padding: 5px; border-bottom: 1px solid #eee;">
+          <small style="color: #666;">${subtitle.startTime.toFixed(1)}s - ${subtitle.endTime.toFixed(1)}s</small><br>
+          ${subtitle.text}
+        </div>
+      `;
+    });
+    
+    if (subtitles.length > 50) {
+      html += `<p><em>... and ${subtitles.length - 50} more segments</em></p>`;
+    }
+    
+    html += `
+      </div>
+      <button onclick="this.parentElement.parentElement.remove()" style="margin-top: 10px; padding: 5px 15px;">Close</button>
+    `;
+    
+    content.innerHTML = html;
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+    
+    // Close on background click
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.remove();
+        console.log('Modal closed by background click');
+      }
+    });
+  }
+
+  // whisper fallback
+  tryWhisper() {
+   //add whisper logic 
+  }
+
+  // Handle YouTube's single-page app navigation
   observeUrlChanges() {
     let currentUrl = location.href;
+    
     const observer = new MutationObserver(() => {
       if (location.href !== currentUrl) {
         currentUrl = location.href;
         if (currentUrl.includes('/watch?v=')) {
           console.log('New video detected, extracting subtitles...');
+          // Wait a bit for YouTube to load the new video data
           setTimeout(() => this.extractSubtitles(), 2000);
         }
       }
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
   }
 
-  tryWhisper() {
-    // Fallback method implementation...
-    console.log('Method 2 not implemented in this example');
-  }
-
+  // Helper method to get subtitles for external use
   getCurrentSubtitles() {
     return this.currentSubtitles || [];
   }
 
+  // Helper method to find subtitles in a time range
   getSubtitlesInRange(startTime, endTime) {
     if (!this.currentSubtitles) return [];
+    
     return this.currentSubtitles.filter(subtitle => 
       subtitle.startTime >= startTime && subtitle.endTime <= endTime
     );
   }
 }
+
+// Add debugging helper
+console.log('Content script loaded, waiting for startChorus message...');
+
+// For manual testing - you can call this in console
+window.testSubtitleExtractor = function() {
+  console.log('Manual test triggered');
+  const extractor = new YouTubeSubtitleExtractor();
+  window.subtitleExtractor = extractor;
+  return extractor;
+};
