@@ -3,7 +3,7 @@
   "name": "Instant Choruser",
   "version": "0.1",
   "description": "Loop and mimic Japanese subtitles",
-  "permissions": ["scripting", "tabs", "activeTab"],
+  "permissions": ["scripting", "tabs", "activeTab", "storage"],
   "host_permissions": ["*://*.youtube.com/*"],
   "action": {
     "default_title": "Instant Choruser",
@@ -21,9 +21,11 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
+      "matches": ["*://*.youtube.com/*", "https://en.wikipedia.org/*"],
       "js": ["./scripts/content.js"],
-      "css": ["./css/content.css"]
+      "css": ["./styles/content.css"],
+      "run_at": "document_idle"
+
     }
   ]
 }
