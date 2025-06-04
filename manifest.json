@@ -3,7 +3,7 @@
   "name": "Instant Choruser",
   "version": "0.1",
   "description": "Loop and mimic Japanese subtitles",
-  "permissions": ["scripting", "tabs", "activeTab", "storage"],
+  "permissions": ["scripting", "tabs", "activeTab", "storage", "webRequest"],
   "host_permissions": ["*://*.youtube.com/*"],
   "action": {
     "default_title": "Instant Choruser",
