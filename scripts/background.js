@@ -75,14 +75,28 @@ function parseSubtitleJSON(rawText) {
 
     const start = event.tStartMs ?? 0;
     const duration = event.dDurationMs ?? 0;
-    const end = start + duration;
+    const originalEnd = start + duration;
 
     parsedSubtitles.push({
       startTime: +(start / 1000).toFixed(3),
-      endTime: +(end / 1000).toFixed(3),
+      endTime: +(originalEnd / 1000).toFixed(3), // Keep original for now
       duration: +(duration / 1000).toFixed(3),
       text: text,
     });
+  }
+
+  // SECOND PASS: Fix endTime to be next subtitle's startTime
+  for (let i = 0; i < parsedSubtitles.length; i++) {
+    const currentSub = parsedSubtitles[i];
+    const nextSub = parsedSubtitles[i + 1];
+    
+    if (nextSub) {
+      // Set endTime to next subtitle's startTime
+      currentSub.endTime = nextSub.startTime;
+      // Recalculate duration
+      currentSub.duration = +(currentSub.endTime - currentSub.startTime).toFixed(3);
+    }
+    // For the last subtitle, keep original endTime
   }
 
   return parsedSubtitles;

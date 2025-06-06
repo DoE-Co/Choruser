@@ -1,0 +1,983 @@
+/* Add this to your content.css file */
+
+.chorus-subtitle-item.current.selected {
+  background: rgba(33, 150, 243, 0.4) !important;
+  border-color: #2196F3 !important;
+  box-shadow: 0 0 0 1px #4CAF50;
+}
+
+.chorus-subtitle-text {
+  pointer-events: none;
+}
+
+.chorus-subtitle-time {
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: all 0.2s;
+  display: inline-block;
+  pointer-events: auto;
+}
+
+.chorus-subtitle-time:hover {
+  background: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+#chorus-subtitle-overlay {
+  position: fixed;
+  width: 350px;
+  background: rgba(20, 20, 30, 0.95);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 10000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: none;
+  flex-direction: column;
+}
+
+.chorus-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: grab;
+}
+
+#chorus-subtitle-overlay.popout .chorus-header {
+  cursor: grab;
+}
+
+#chorus-subtitle-overlay.popout .chorus-header:active {
+  cursor: grabbing;
+}
+
+.chorus-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chorus-control-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chorus-control-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.chorus-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nw-resize;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.chorus-resize-handle::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-bottom: 8px solid rgba(255, 255, 255, 0.3);
+}
+
+#chorus-subtitle-overlay.popout .chorus-resize-handle {
+  opacity: 1;
+}
+
+#chorus-subtitle-overlay.popout .chorus-resize-handle:hover::after {
+  border-bottom-color: rgba(255, 255, 255, 0.6);
+}
+
+.chorus-subtitle-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 0;
+  max-height: 400px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.chorus-loading {
+  text-align: center;
+  color: #888;
+  padding: 40px 20px;
+  font-style: italic;
+}
+
+.chorus-subtitle-item {
+  margin: 0 16px 8px 16px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.chorus-subtitle-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateX(2px);
+}
+
+.chorus-subtitle-item.current {
+  background: rgba(147, 51, 234, 0.3);
+  border-color: #9333ea;
+  box-shadow: 0 0 0 1px rgba(147, 51, 234, 0.5);
+}
+
+.chorus-subtitle-item.selected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.chorus-subtitle-item.selected.current {
+  border-color: #9333ea;
+  background: rgba(147, 51, 234, 0.4);
+}
+
+.chorus-subtitle-text {
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.4;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.chorus-subtitle-time {
+  color: #888;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.chorus-controls {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chorus-btn {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chorus-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.chorus-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chorus-btn.clear {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.chorus-btn.clear:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.chorus-btn.primary {
+  background: rgba(147, 51, 234, 0.2);
+  border-color: rgba(147, 51, 234, 0.4);
+  color: #a855f7;
+}
+
+.chorus-btn.primary:hover:not(:disabled) {
+  background: rgba(147, 51, 234, 0.3);
+  border-color: rgba(147, 51, 234, 0.6);
+}
+
+.chorus-btn.send {
+  background: rgba(249, 115, 22, 0.2);
+  border-color: rgba(249, 115, 22, 0.4);
+  color: #f97316;
+}
+
+.chorus-btn.send:hover:not(:disabled) {
+  background: rgba(249, 115, 22, 0.3);
+  border-color: rgba(249, 115, 22, 0.6);
+}
+
+/* Animation for smooth entrance */
+#chorus-subtitle-overlay {
+  animation: slideInFromLeft 0.3s ease-out;
+}
+
+@keyframes slideInFromLeft {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.chorus-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.chorus-icon {
+  font-size: 18px;
+}
+
+#chorus-subtitle-overlay.popout {
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  #chorus-subtitle-overlay:not(.popout) {
+    width: 300px;
+  }
+}
+
+@media (max-width: 900px) {
+  #chorus-subtitle-overlay:not(.popout) {
+    width: 280px;
+    font-size: 13px;
+  }
+  
+  .chorus-subtitle-text {
+    font-size: 13px;
+  }
+}
+
+/* Prevent text selection during drag/resize */
+#chorus-subtitle-overlay.popout * {
+  user-select: none;
+}
+
+/* Add this to your content.css file */
+
+/* Layout wrapper for video + subtitle browser */
+.chorus-layout-wrapper {
+  display: flex !important;
+  width: 100% !important;
+  height: 100% !important;
+  position: relative !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  background: #000 !important;
+}
+
+.chorus-layout-wrapper #chorus-subtitle-overlay {
+  position: absolute !important;
+  flex-shrink: 0 !important;
+  order: 1 !important;
+}
+
+.chorus-layout-wrapper .html5-video-player,
+.chorus-layout-wrapper #movie_player {
+  flex-shrink: 0 !important;
+  order: 2 !important;
+}
+
+#chorus-subtitle-overlay {
+  position: fixed;
+  width: 350px;
+  background: rgba(20, 20, 30, 0.95);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 10000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: none;
+  flex-direction: column;
+}
+
+.chorus-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: grab;
+}
+
+#chorus-subtitle-overlay.popout .chorus-header {
+  cursor: grab;
+}
+
+#chorus-subtitle-overlay.popout .chorus-header:active {
+  cursor: grabbing;
+}
+
+.chorus-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chorus-control-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chorus-control-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.chorus-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nw-resize;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.chorus-resize-handle::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-bottom: 8px solid rgba(255, 255, 255, 0.3);
+}
+
+#chorus-subtitle-overlay.popout .chorus-resize-handle {
+  opacity: 1;
+}
+
+#chorus-subtitle-overlay.popout .chorus-resize-handle:hover::after {
+  border-bottom-color: rgba(255, 255, 255, 0.6);
+}
+
+.chorus-subtitle-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 0;
+  max-height: 400px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.chorus-loading {
+  text-align: center;
+  color: #888;
+  padding: 40px 20px;
+  font-style: italic;
+}
+
+.chorus-subtitle-item {
+  margin: 0 16px 8px 16px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.chorus-subtitle-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateX(2px);
+}
+
+.chorus-subtitle-item.current {
+  background: rgba(147, 51, 234, 0.3);
+  border-color: #9333ea;
+  box-shadow: 0 0 0 1px rgba(147, 51, 234, 0.5);
+}
+
+.chorus-subtitle-item.selected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.chorus-subtitle-item.selected.current {
+  border-color: #9333ea;
+  background: rgba(147, 51, 234, 0.4);
+}
+
+.chorus-subtitle-text {
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.4;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.chorus-subtitle-time {
+  color: #888;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.chorus-controls {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chorus-btn {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chorus-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.chorus-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chorus-btn.clear {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.chorus-btn.clear:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.chorus-btn.primary {
+  background: rgba(147, 51, 234, 0.2);
+  border-color: rgba(147, 51, 234, 0.4);
+  color: #a855f7;
+}
+
+.chorus-btn.primary:hover:not(:disabled) {
+  background: rgba(147, 51, 234, 0.3);
+  border-color: rgba(147, 51, 234, 0.6);
+}
+
+.chorus-btn.send {
+  background: rgba(249, 115, 22, 0.2);
+  border-color: rgba(249, 115, 22, 0.4);
+  color: #f97316;
+}
+
+.chorus-btn.send:hover:not(:disabled) {
+  background: rgba(249, 115, 22, 0.3);
+  border-color: rgba(249, 115, 22, 0.6);
+}
+
+/* Animation for smooth entrance */
+#chorus-subtitle-overlay {
+  animation: slideInFromLeft 0.3s ease-out;
+}
+
+@keyframes slideInFromLeft {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.chorus-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.chorus-icon {
+  font-size: 18px;
+}
+
+#chorus-subtitle-overlay.popout {
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  #chorus-subtitle-overlay:not(.popout) {
+    width: 300px;
+  }
+}
+
+@media (max-width: 900px) {
+  #chorus-subtitle-overlay:not(.popout) {
+    width: 280px;
+    font-size: 13px;
+  }
+  
+  .chorus-subtitle-text {
+    font-size: 13px;
+  }
+}
+
+/* Prevent text selection during drag/resize */
+#chorus-subtitle-overlay.popout * {
+  user-select: none;
+}
+/* Add this to your content.css file */
+
+/* Notification animations */
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOutToRight {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Layout wrapper for video + subtitle browser */
+.chorus-layout-wrapper {
+  display: flex !important;
+  width: 100% !important;
+  height: 100% !important;
+  position: relative !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  background: #000 !important;
+}
+
+.chorus-layout-wrapper #chorus-subtitle-overlay {
+  position: absolute !important;
+  flex-shrink: 0 !important;
+  order: 1 !important;
+}
+
+.chorus-layout-wrapper .html5-video-player,
+.chorus-layout-wrapper #movie_player {
+  flex-shrink: 0 !important;
+  order: 2 !important;
+}
+
+#chorus-subtitle-overlay {
+  position: fixed;
+  width: 350px;
+  background: rgba(20, 20, 30, 0.95);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 10000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: none;
+  flex-direction: column;
+}
+
+.chorus-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: grab;
+}
+
+#chorus-subtitle-overlay.popout .chorus-header {
+  cursor: grab;
+}
+
+#chorus-subtitle-overlay.popout .chorus-header:active {
+  cursor: grabbing;
+}
+
+.chorus-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chorus-control-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chorus-control-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.chorus-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nw-resize;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.chorus-resize-handle::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-bottom: 8px solid rgba(255, 255, 255, 0.3);
+}
+
+#chorus-subtitle-overlay.popout .chorus-resize-handle {
+  opacity: 1;
+}
+
+#chorus-subtitle-overlay.popout .chorus-resize-handle:hover::after {
+  border-bottom-color: rgba(255, 255, 255, 0.6);
+}
+
+.chorus-subtitle-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 0;
+  max-height: 400px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.chorus-subtitle-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.chorus-loading {
+  text-align: center;
+  color: #888;
+  padding: 40px 20px;
+  font-style: italic;
+}
+
+.chorus-subtitle-item {
+  margin: 0 16px 8px 16px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.chorus-subtitle-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateX(2px);
+}
+
+.chorus-subtitle-item.current {
+  background: rgba(147, 51, 234, 0.3);
+  border-color: #9333ea;
+  box-shadow: 0 0 0 1px rgba(147, 51, 234, 0.5);
+}
+
+.chorus-subtitle-item.selected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.chorus-subtitle-item.selected.current {
+  border-color: #9333ea;
+  background: rgba(147, 51, 234, 0.4);
+}
+
+.chorus-subtitle-text {
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.4;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.chorus-subtitle-time {
+  color: #888;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.chorus-controls {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chorus-btn {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chorus-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.chorus-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chorus-btn.clear {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.chorus-btn.clear:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.chorus-btn.primary {
+  background: rgba(147, 51, 234, 0.2);
+  border-color: rgba(147, 51, 234, 0.4);
+  color: #a855f7;
+}
+
+.chorus-btn.primary:hover:not(:disabled) {
+  background: rgba(147, 51, 234, 0.3);
+  border-color: rgba(147, 51, 234, 0.6);
+}
+
+.chorus-btn.send {
+  background: rgba(249, 115, 22, 0.2);
+  border-color: rgba(249, 115, 22, 0.4);
+  color: #f97316;
+}
+
+.chorus-btn.send:hover:not(:disabled) {
+  background: rgba(249, 115, 22, 0.3);
+  border-color: rgba(249, 115, 22, 0.6);
+}
+
+/* Animation for smooth entrance */
+#chorus-subtitle-overlay {
+  animation: slideInFromLeft 0.3s ease-out;
+}
+
+@keyframes slideInFromLeft {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.chorus-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.chorus-icon {
+  font-size: 18px;
+}
+
+#chorus-subtitle-overlay.popout {
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  #chorus-subtitle-overlay:not(.popout) {
+    width: 300px;
+  }
+}
+
+@media (max-width: 900px) {
+  #chorus-subtitle-overlay:not(.popout) {
+    width: 280px;
+    font-size: 13px;
+  }
+  
+  .chorus-subtitle-text {
+    font-size: 13px;
+  }
+}
+
+/* Prevent text selection during drag/resize */
+#chorus-subtitle-overlay.popout * {
+  user-select: none;
+}
+
+/* Add these animations to your content.css file */
+
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOutToRight {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
