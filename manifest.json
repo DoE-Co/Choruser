@@ -14,7 +14,7 @@
       "128": "./assets/icon128.png"
     },
     "js": ["./scripts/popup.js"],
-    "css": ["./css/popup.css"]
+    "css": ["./styles/popup.css"]
   },
   "background": {
     "service_worker": "./scripts/background.js"
