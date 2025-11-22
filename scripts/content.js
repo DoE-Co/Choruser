@@ -19,6 +19,187 @@ const additionalStyles = `
     pointer-events: none;
   }
   
+  .chorus-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    color: white;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 15px;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* Studio Mode Styles */
+  .chorus-studio-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #121212;
+    color: #e0e0e0;
+  }
+
+  .studio-header {
+    padding: 10px;
+    background: #1e1e1e;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: space-between; /* Space for toggle */
+  }
+
+  .view-toggle {
+    display: flex;
+    background: #333;
+    border-radius: 4px;
+    padding: 2px;
+  }
+
+  .toggle-btn {
+    background: none;
+    border: none;
+    color: #888;
+    padding: 4px 8px;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+
+  .toggle-btn.active {
+    background: #555;
+    color: white;
+  }
+
+  .studio-tracks {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .track-container {
+    background: #1e1e1e;
+    border-radius: 6px;
+    padding: 10px;
+    border: 1px solid #333;
+  }
+
+  .track-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 5px;
+  }
+
+  .track-container.original .track-label { color: #4CAF50; }
+  .track-container.user .track-label { color: #2196F3; }
+
+  .waveform-display {
+    height: 60px;
+    background: #000;
+    border-radius: 4px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .waveform-line {
+    width: 100%;
+    height: 2px;
+    background: #4CAF50;
+    opacity: 0.5;
+  }
+  
+  .waveform-line.user-recorded {
+    background: #2196F3;
+  }
+
+  .track-controls {
+    margin-top: 5px;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .icon-btn {
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,0.1); }
+  .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .studio-main-controls {
+    padding: 20px;
+    background: #1e1e1e;
+    border-top: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .record-btn-large {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: #fff;
+    border: 4px solid #ccc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .record-btn-large .inner-circle {
+    width: 24px;
+    height: 24px;
+    background: #ff4444;
+    border-radius: 50%;
+    transition: all 0.2s;
+  }
+
+  .record-btn-large:hover { border-color: #fff; }
+  
+  .record-btn-large.recording {
+    border-color: #ff4444;
+  }
+  .record-btn-large.recording .inner-circle {
+    border-radius: 4px; /* Square */
+    transform: scale(0.8);
+  }
+
+  .control-label {
+    margin-top: 8px;
+    font-size: 10px;
+    color: #888;
+    letter-spacing: 1px;
+  }
+  
   .chorus-subtitle-time {
     cursor: pointer;
     padding: 2px 4px;
@@ -42,6 +223,82 @@ const additionalStyles = `
   .chorus-subtitle-item.hidden {
     display: none !important;
   }
+
+  /* Practice Mode Styles */
+  .chorus-practice-container {
+    padding: 15px;
+    background: #1a1a1a;
+    color: white;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .practice-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 10px;
+  }
+
+  .chorus-record-btn {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: #ff4444;
+    border: none;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    margin: 0 auto;
+  }
+
+  .chorus-record-btn:hover {
+    transform: scale(1.1);
+    background: #ff2222;
+  }
+
+  .chorus-record-btn.recording {
+    animation: pulse 1.5s infinite;
+    background: #cc0000;
+    border-radius: 10px; /* Square shape when stop */
+  }
+
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.7); }
+    70% { box-shadow: 0 0 0 15px rgba(255, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0); }
+  }
+
+  .practice-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    align-items: center;
+  }
+
+  .control-row {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .status-text {
+    text-align: center;
+    font-size: 12px;
+    color: #aaa;
+    margin-top: 5px;
+  }
+
 `;
 
 // Add the styles to the page
@@ -73,21 +330,21 @@ function setupHotkeyListener() {
         activeElement.contentEditable === 'true' ||
         activeElement.isContentEditable
       );
-      
+
       // Don't trigger if modifier keys are pressed (Ctrl+H, Alt+H, etc.)
       if (isTyping || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) {
         return;
       }
-      
+
       // Only trigger on YouTube video pages
       if (!window.location.href.includes('/watch')) {
         return;
       }
-      
+
       // Prevent default behavior and stop propagation
       e.preventDefault();
       e.stopPropagation();
-      
+
       // Toggle subtitle browser visibility
       toggleSubtitleBrowser();
     }
@@ -95,25 +352,22 @@ function setupHotkeyListener() {
 }
 
 function toggleSubtitleBrowser() {
-  if (!subtitleOverlay) {
-    // First time opening - initialize and show
-    showSubtitleOverlay();
+  if (!subtitleOverlay || subtitleOverlay.style.display === 'none') {
+    // Show
+    toggleChorusMode(true);
     init();
-  } else if (subtitleOverlay.style.display === 'none') {
-    // Show the overlay
-    showSubtitleOverlay();
   } else {
-    // Hide the overlay
-    hideSubtitleOverlay();
+    // Hide
+    toggleChorusMode(false);
   }
-  
+
   console.log('🎵 Subtitle browser toggled via hotkey');
 }
 /* ------------------ SUBTITLE UI LOGIC -----------------------*/
 // Create the subtitle overlay UI
 function createSubtitleOverlay() {
   if (subtitleOverlay) return; // Already exists
-  
+
   addSubtitleStyles();
   const overlay = document.createElement('div');
   overlay.id = 'chorus-subtitle-overlay';
@@ -137,28 +391,18 @@ function createSubtitleOverlay() {
       <div class="chorus-loading">Loading subtitles...</div>
     </div>
     <div class="chorus-controls">
-      <button class="chorus-btn" id="combine-selected" disabled>
-        ☐ Combine selected
-      </button>
-      <button class="chorus-btn" id="show-only-selected" disabled>
-        ☐ Show only selected
-      </button>
-      <button class="chorus-btn clear" id="clear-selection">
-        CLEAR SELECTION
-      </button>
-      <button class="chorus-btn primary" id="create-practice" disabled>
-        CREATE
-      </button>
+      <button id="chorus-clear-btn" class="chorus-btn clear" disabled>Clear</button>
+      <button id="chorus-create-btn" class="chorus-btn primary" disabled>Create</button>
     </div>
     <div class="chorus-resize-handle" id="chorus-resize-handle"></div>
   `;
-  
+
   document.body.appendChild(overlay);
   subtitleOverlay = overlay;
-  
+
   // Add event listeners
   setupOverlayEventListeners();
-  
+
   // Position overlay
   positionOverlay();
 }
@@ -167,25 +411,24 @@ function createSubtitleOverlay() {
 function setupOverlayEventListeners() {
   // Close button
   document.getElementById('chorus-close-btn').addEventListener('click', () => {
-    hideSubtitleOverlay();
+    toggleChorusMode(false);
   });
-  
+
   // Popout button
   document.getElementById('chorus-popout-btn').addEventListener('click', togglePopout);
-  
+
   // Control buttons
-  document.getElementById('combine-selected').addEventListener('click', toggleCombineSelected);
-  document.getElementById('show-only-selected').addEventListener('click', toggleShowOnlySelected);
-  document.getElementById('clear-selection').addEventListener('click', clearSelection);
-  document.getElementById('create-practice').addEventListener('click', createPractice);
-  
+  // Removed combine-selected and show-only-selected
+  document.getElementById('chorus-clear-btn').addEventListener('click', clearSelection);
+  document.getElementById('chorus-create-btn').addEventListener('click', createPractice);
+
   // Handle subtitle item clicks (for selection) - UPDATED
   document.addEventListener('click', (e) => {
     if (e.target.classList.contains('chorus-subtitle-item')) {
       toggleSubtitleSelection(e.target);
     }
   });
-  
+
   // Handle timestamp clicks (for seeking) - NEW
   document.addEventListener('click', (e) => {
     if (e.target.classList.contains('chorus-subtitle-time')) {
@@ -196,21 +439,21 @@ function setupOverlayEventListeners() {
       }
     }
   });
-  
+
   // Handle video time updates to highlight current subtitle
   const video = document.querySelector('video');
   if (video) {
     video.addEventListener('timeupdate', updateCurrentSubtitle);
   }
-  
+
   // Dragging functionality
   const header = document.getElementById('chorus-header');
   header.addEventListener('mousedown', startDrag);
-  
+
   // Resizing functionality
   const resizeHandle = document.getElementById('chorus-resize-handle');
   resizeHandle.addEventListener('mousedown', startResize);
-  
+
   // Global mouse events
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseup', stopDragResize);
@@ -228,21 +471,21 @@ function seekToTime(seconds) {
 function toggleCombineSelected() {
   isCombinedView = !isCombinedView;
   const btn = document.getElementById('combine-selected');
-  
+
   if (isCombinedView) {
     btn.classList.add('toggle-active');
     btn.innerHTML = '☑ Combine selected';
   } else {
     btn.classList.remove('toggle-active');
     btn.innerHTML = '☐ Combine selected';
-    
+
   }
 }
 
 function toggleShowOnlySelected() {
   isShowOnlySelected = !isShowOnlySelected;
   const btn = document.getElementById('show-only-selected');
-  
+
   if (isShowOnlySelected) {
     btn.classList.add('toggle-active');
     btn.innerHTML = '☑ Show only selected';
@@ -265,7 +508,7 @@ function showOnlySelectedSubtitles() {
       item.classList.add('hidden');
     }
   });
-  
+
   console.log('👁 Showing only selected subtitles');
 }
 
@@ -273,7 +516,7 @@ function showAllSubtitles() {
   document.querySelectorAll('.chorus-subtitle-item').forEach(item => {
     item.classList.remove('hidden');
   });
-  
+
   console.log('👁 Showing all subtitles');
 }
 
@@ -282,116 +525,97 @@ let isDragging = false;
 let isResizing = false;
 let dragOffset = { x: 0, y: 0 };
 
+/* ------------------ POSITIONING LOGIC -----------------------*/
+
+/* ------------------ POSITIONING LOGIC -----------------------*/
+
 function positionOverlay() {
   if (!subtitleOverlay) return;
-  
+
   if (isPopout) {
-    // Don't auto-position if in popout mode
+    resetVideoLayout();
     return;
   }
-  
-  // Get viewport and player dimensions
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const player = document.querySelector('#movie_player, .html5-video-player');
-  
+
+  // DOCKED MODE: Left side INSIDE the video player
+  const player = document.querySelector('#movie_player') || document.querySelector('.html5-video-player');
+  const videoElement = document.querySelector('.html5-main-video');
+  const controlsHeight = 54; // Height of YouTube bottom control bar
+
   if (player) {
-    const playerRect = player.getBoundingClientRect();
-    
-    // Calculate overlay width based on screen size (like Migaku)
-    let overlayWidth;
-    if (viewportWidth >= 2500) {
-      // Ultra-wide monitors: larger subtitle browser
-      overlayWidth = Math.min(450, viewportWidth * 0.15);
-    } else if (viewportWidth >= 1920) {
-      // Standard wide screens: medium size
-      overlayWidth = Math.min(400, viewportWidth * 0.18);
-    } else {
-      // Smaller screens: compact size
-      overlayWidth = Math.min(350, viewportWidth * 0.22);
+    // Ensure overlay is a child of the player
+    if (subtitleOverlay.parentNode !== player) {
+      player.appendChild(subtitleOverlay);
     }
-    
-    // Minimum overlay width for usability
-    overlayWidth = Math.max(300, overlayWidth);
-    
-    // Determine positioning strategy - PRIORITIZE LEFT SIDE
-    const spaceOnLeft = playerRect.left;
-    const spaceOnRight = viewportWidth - (playerRect.right);
-    const minVideoWidth = 800; // Don't make video smaller than this
-    
-    if (spaceOnLeft >= overlayWidth + 20) {
-      // Position to the LEFT of video (preferred)
-      subtitleOverlay.style.position = 'fixed';
-      subtitleOverlay.style.left = `${playerRect.left - overlayWidth - 10}px`;
-      subtitleOverlay.style.top = `${Math.max(10, playerRect.top)}px`;
-      subtitleOverlay.style.width = `${overlayWidth}px`;
-      subtitleOverlay.style.height = `${Math.min(playerRect.height - 20, viewportHeight - 60)}px`;
-      subtitleOverlay.style.zIndex = '2000';
-      
-    } else if (playerRect.width - overlayWidth > minVideoWidth) {
-      // Position inside player on the LEFT
-      subtitleOverlay.style.position = 'fixed';
-      subtitleOverlay.style.left = `${playerRect.left + 15}px`;
-      subtitleOverlay.style.top = `${playerRect.top + 10}px`;
-      subtitleOverlay.style.width = `${overlayWidth}px`;
-      subtitleOverlay.style.height = `${playerRect.height - 80}px`; // Leave space for controls
-      subtitleOverlay.style.zIndex = '2000';
-      
-    } else if (spaceOnRight >= overlayWidth + 20) {
-      // Fallback: Position to the right of video
-      subtitleOverlay.style.position = 'fixed';
-      subtitleOverlay.style.left = `${playerRect.right + 10}px`;
-      subtitleOverlay.style.top = `${Math.max(10, playerRect.top)}px`;
-      subtitleOverlay.style.width = `${overlayWidth}px`;
-      subtitleOverlay.style.height = `${Math.min(playerRect.height - 20, viewportHeight - 60)}px`;
-      subtitleOverlay.style.zIndex = '2000';
-      
-    } else {
-      // Last resort: position inside on left with reduced width
-      const maxWidth = Math.min(overlayWidth, playerRect.width * 0.35);
-      subtitleOverlay.style.position = 'fixed';
-      subtitleOverlay.style.left = `${playerRect.left + 10}px`;
-      subtitleOverlay.style.top = `${playerRect.top + 10}px`;
-      subtitleOverlay.style.width = `${maxWidth}px`;
-      subtitleOverlay.style.height = `${playerRect.height - 80}px`;
-      subtitleOverlay.style.zIndex = '2000';
+
+    // 1. Position Overlay
+    subtitleOverlay.style.position = 'absolute';
+    subtitleOverlay.style.top = '0';
+    subtitleOverlay.style.left = '0';
+    subtitleOverlay.style.bottom = `${controlsHeight}px`; // Stop above controls
+    subtitleOverlay.style.right = 'auto';
+    subtitleOverlay.style.width = '350px';
+    subtitleOverlay.style.height = 'auto'; // Let top/bottom define height
+    subtitleOverlay.style.zIndex = '60';
+    subtitleOverlay.style.borderRight = '1px solid rgba(255,255,255,0.1)';
+    subtitleOverlay.style.background = 'rgba(18, 18, 18, 0.95)';
+    subtitleOverlay.style.boxShadow = 'none';
+
+    // 2. Resize Video (Side-by-Side)
+    if (videoElement) {
+      videoElement.style.width = 'calc(100% - 350px)';
+      videoElement.style.left = '350px';
+      videoElement.style.top = '0';
+      videoElement.style.objectFit = 'contain'; // Prevent clipping
+      // YouTube uses 'left' for positioning, so this shifts it.
+      // 'width' ensures it fits the remaining space.
     }
-    
-    // Ensure it's attached to body for fixed positioning
-    if (subtitleOverlay.parentNode !== document.body) {
-      document.body.appendChild(subtitleOverlay);
-    }
-    
+
   } else {
-    console.warn('Player not found for positioning');
+    // Fallback
+    subtitleOverlay.style.position = 'fixed';
+    subtitleOverlay.style.left = '0';
+    subtitleOverlay.style.top = '56px';
+    subtitleOverlay.style.bottom = '0';
+    subtitleOverlay.style.width = '350px';
+  }
+}
+
+function resetVideoLayout() {
+  const videoElement = document.querySelector('.html5-main-video');
+  if (videoElement) {
+    videoElement.style.removeProperty('width');
+    videoElement.style.removeProperty('left');
+    videoElement.style.removeProperty('top');
+    videoElement.style.removeProperty('object-fit');
   }
 }
 
 function displaySubtitles(subtitles) {
   currentSubtitles = subtitles;
   const container = document.getElementById('chorus-subtitle-container');
-  
+
   if (!subtitles || subtitles.length === 0) {
     container.innerHTML = '<div class="chorus-loading">No subtitles available</div>';
     return;
   }
-  
+
   container.innerHTML = '';
-  
+
   subtitles.forEach((subtitle, index) => {
     const item = document.createElement('div');
     item.className = 'chorus-subtitle-item';
     item.dataset.index = index;
     item.dataset.startTime = subtitle.startTime;
     item.dataset.endTime = subtitle.endTime; // Use the corrected endTime from background
-    
+
     item.innerHTML = `
       <div class="chorus-subtitle-text">${subtitle.text}</div>
       <div class="chorus-subtitle-time">
         ${formatTime(subtitle.startTime)} - ${formatTime(subtitle.endTime)}
       </div>
     `;
-    
+
     container.appendChild(item);
   });
 }
@@ -399,16 +623,16 @@ function displaySubtitles(subtitles) {
 function updateCurrentSubtitle() {
   const video = document.querySelector('video');
   if (!video || !currentSubtitles.length) return;
-  
+
   const currentTime = video.currentTime;
-  
+
   // Find the active subtitle: the one whose startTime has passed but next subtitle hasn't started yet
   let newIndex = -1;
-  
+
   for (let i = 0; i < currentSubtitles.length; i++) {
     const currentSub = currentSubtitles[i];
     const nextSub = currentSubtitles[i + 1];
-    
+
     // Check if current time is at or after this subtitle's start time
     if (currentTime >= currentSub.startTime) {
       // If there's a next subtitle, check if we haven't reached its start time yet
@@ -427,14 +651,14 @@ function updateCurrentSubtitle() {
       break;
     }
   }
-  
+
   if (newIndex !== currentSubtitleIndex) {
     // Remove previous highlight
     if (currentSubtitleIndex >= 0) {
       const prevItem = document.querySelector(`[data-index="${currentSubtitleIndex}"]`);
       if (prevItem) prevItem.classList.remove('current');
     }
-    
+
     // Add new highlight
     currentSubtitleIndex = newIndex;
     if (currentSubtitleIndex >= 0) {
@@ -450,7 +674,7 @@ function updateCurrentSubtitle() {
 
 function toggleSubtitleSelection(item) {
   const index = parseInt(item.dataset.index);
-  
+
   if (selectedSubtitles.has(index)) {
     selectedSubtitles.delete(index);
     item.classList.remove('selected');
@@ -458,7 +682,7 @@ function toggleSubtitleSelection(item) {
     selectedSubtitles.add(index);
     item.classList.add('selected');
   }
-  
+
   updateControlButtons();
 }
 
@@ -467,29 +691,23 @@ function toggleSubtitleSelection(item) {
 function updateControlButtons() {
   const hasSelection = selectedSubtitles.size > 0;
   const hasMultipleSelection = selectedSubtitles.size > 1;
-  
-  const combineBtn = document.getElementById('combine-selected');
-  const showOnlyBtn = document.getElementById('show-only-selected');
-  const createBtn = document.getElementById('create-practice');
-  
+
+  // Removed combineBtn and showOnlyBtn
+  const clearBtn = document.getElementById('chorus-clear-btn');
+  const createBtn = document.getElementById('chorus-create-btn');
+
   // Only disable if elements exist (they might not during initialization)
-  if (combineBtn) combineBtn.disabled = !hasMultipleSelection;
-  if (showOnlyBtn) showOnlyBtn.disabled = !hasSelection;
+  if (clearBtn) clearBtn.disabled = !hasSelection; // Clear button enabled if any selection
   if (createBtn) createBtn.disabled = !hasSelection;
-  
+
   // Reset toggle states if no valid selection
-  if (!hasMultipleSelection && isCombinedView) {
-    toggleCombineSelected();
-  }
-  if (!hasSelection && isShowOnlySelected) {
-    toggleShowOnlySelected();
-  }
+  // Removed logic for combine and show only toggles
 }
 
 
 function clearSelection() {
   selectedSubtitles.clear();
-  
+
   // Reset toggles if active
   if (isCombinedView) {
     toggleCombineSelected();
@@ -497,48 +715,607 @@ function clearSelection() {
   if (isShowOnlySelected) {
     toggleShowOnlySelected();
   }
-  
+
   document.querySelectorAll('.chorus-subtitle-item.selected').forEach(item => {
     item.classList.remove('selected');
   });
   updateControlButtons();
 }
 
-// UPDATED createPractice function to use correct timing
-function createPractice() {
+// UPDATED createPractice function
+async function createPractice() {
   const selectedIndices = Array.from(selectedSubtitles).sort((a, b) => a - b);
-  
+  if (selectedIndices.length === 0) return;
+
+  let startTime, endTime;
+
   if (isCombinedView) {
     const firstSubtitle = currentSubtitles[selectedIndices[0]];
     const lastSubtitle = currentSubtitles[selectedIndices[selectedIndices.length - 1]];
-    
-    console.log('🎯 Creating COMBINED practice session with subtitles:', selectedIndices);
-    console.log('📝 Record from', formatTime(firstSubtitle.startTime), 
-                'to', formatTime(lastSubtitle.endTime)); // Now uses correct endTime!
-    // TODO: Start recording mode for the entire time range
+    startTime = firstSubtitle.startTime;
+    endTime = lastSubtitle.endTime;
   } else {
-    console.log('🎯 Creating SEPARATE practice sessions for each subtitle:', selectedIndices);
-    selectedIndices.forEach(index => {
-      const subtitle = currentSubtitles[index];
-      console.log('📝 Individual recording for:', formatTime(subtitle.startTime), '-', formatTime(subtitle.endTime));
-    });
-    // TODO: Start recording mode for each subtitle individually
+    const firstSubtitle = currentSubtitles[selectedIndices[0]];
+    const lastSubtitle = currentSubtitles[selectedIndices[selectedIndices.length - 1]];
+    startTime = firstSubtitle.startTime;
+    endTime = lastSubtitle.endTime;
+  }
+
+  console.log(`🎯 Preparing Practice: ${formatTime(startTime)} - ${formatTime(endTime)}`);
+
+  // 1. Hide Selection UI
+  document.getElementById('chorus-subtitle-container').style.display = 'none';
+  document.querySelector('.chorus-controls').style.display = 'none';
+
+  // 2. Show "Capturing" State
+  showCapturingState();
+
+  // 3. Capture the Audio
+  try {
+    const originalAudioBlob = await captureOriginalAudio(startTime, endTime);
+    // 4. Launch Studio Mode with the captured audio
+    launchStudioMode(originalAudioBlob, startTime, endTime);
+  } catch (err) {
+    console.error("Capture failed:", err);
+    alert("Failed to capture audio. Please try again.");
+    // Restore UI
+    document.getElementById('chorus-subtitle-container').style.display = 'block';
+    document.querySelector('.chorus-controls').style.display = 'flex';
   }
 }
 
-
-function showSubtitleOverlay() {
-  if (!subtitleOverlay) {
-    createSubtitleOverlay();
+function showCapturingState() {
+  const overlay = document.getElementById('chorus-subtitle-overlay');
+  let loader = document.getElementById('chorus-loader');
+  if (!loader) {
+    loader = document.createElement('div');
+    loader.id = 'chorus-loader';
+    loader.className = 'chorus-loading-overlay';
+    overlay.appendChild(loader);
   }
-  subtitleOverlay.style.display = 'block';
-  positionOverlay(); // Reposition in case window was resized
-  startMonitoringChanges(); // Start monitoring for monitor changes
+  loader.innerHTML = `
+    <div class="spinner"></div>
+    <div class="loading-text">Extracting Audio...</div>
+    <div class="loading-subtext">Please wait while we capture the segment</div>
+  `;
+  loader.style.display = 'flex';
 }
 
-function hideSubtitleOverlay() {
-  if (subtitleOverlay) {
-    subtitleOverlay.style.display = 'none';
+function hideCapturingState() {
+  const loader = document.getElementById('chorus-loader');
+  if (loader) loader.style.display = 'none';
+}
+
+async function captureOriginalAudio(startTime, endTime) {
+  const video = document.querySelector('video');
+  const duration = (endTime - startTime) * 1000;
+
+  // Seek to start
+  video.currentTime = startTime;
+
+  // Wait for seek to complete
+  await new Promise(resolve => {
+    const onSeek = () => {
+      video.removeEventListener('seeked', onSeek);
+      resolve();
+    };
+    video.addEventListener('seeked', onSeek);
+  });
+
+  // Capture stream
+  // NOTE: captureStream() might be vendor prefixed or require specific handling
+  let stream;
+  if (video.captureStream) {
+    stream = video.captureStream();
+  } else if (video.mozCaptureStream) {
+    stream = video.mozCaptureStream();
+  } else {
+    throw new Error("captureStream not supported");
+  }
+
+  const mediaRecorder = new MediaRecorder(stream);
+  const chunks = [];
+
+  return new Promise((resolve, reject) => {
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(chunks, { type: 'video/webm' }); // Usually video/webm even if just audio
+      resolve(blob);
+    };
+
+    mediaRecorder.start();
+    video.play();
+
+    // Stop after duration
+    setTimeout(() => {
+      mediaRecorder.stop();
+      video.pause();
+    }, duration + 200); // Add small buffer
+  });
+}
+
+/* ------------------ STUDIO MODE LOGIC -----------------------*/
+
+let studioState = {
+  originalBlob: null,
+  originalUrl: null,
+  userBlob: null,
+  userUrl: null,
+  isPlaying: false
+};
+
+/* ------------------ SPECTROGRAM VISUALIZATION -----------------------*/
+
+// Simple FFT implementation for Spectrogram
+// Note: For production, a WebAssembly FFT or optimized library is better.
+// This is a basic JS implementation for demonstration.
+
+function getSpectrogramData(audioBuffer, fftSize = 2048) {
+  const channelData = audioBuffer.getChannelData(0);
+  const sampleRate = audioBuffer.sampleRate;
+  const stepSize = fftSize / 2; // Overlap
+  const iterations = Math.floor((channelData.length - fftSize) / stepSize);
+  const spectrogram = [];
+
+  // Pre-calculate Hamming window
+  const window = new Float32Array(fftSize);
+  for (let i = 0; i < fftSize; i++) {
+    window[i] = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (fftSize - 1));
+  }
+
+  for (let i = 0; i < iterations; i++) {
+    const offset = i * stepSize;
+    const buffer = new Float32Array(fftSize);
+
+    // Apply window function
+    for (let j = 0; j < fftSize; j++) {
+      buffer[j] = channelData[offset + j] * window[j];
+    }
+
+    // Perform FFT (Magnitude only)
+    // Since we don't have a complex FFT lib, we'll use a simplified DFT for key frequencies
+    // OR better: Use OfflineAudioContext to get frequency data!
+    // Let's use OfflineAudioContext as it's native and fast.
+  }
+  return spectrogram;
+}
+
+// Optimized approach using OfflineAudioContext
+async function renderSpectrogram(blob, canvasId) {
+  const container = document.getElementById(canvasId);
+  if (!container) return;
+
+  container.innerHTML = '';
+  const canvas = document.createElement('canvas');
+  canvas.width = container.clientWidth;
+  canvas.height = container.clientHeight;
+  container.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+  // We need to process the audio to get frequency data over time.
+  // We can't easily do this with OfflineContext for *visualization* of the whole file at once
+  // without playing it.
+  // Actually, we can just compute it manually.
+
+  drawSpectrogramOnCanvas(audioBuffer, ctx, canvas.width, canvas.height);
+}
+
+function drawSpectrogramOnCanvas(audioBuffer, ctx, width, height) {
+  const data = audioBuffer.getChannelData(0);
+  const fftSize = 512; // Lower resolution for performance
+  const step = Math.floor(data.length / width); // One column per pixel width
+
+  // Create a temporary Float32Array for the FFT
+  const real = new Float32Array(fftSize);
+  const imag = new Float32Array(fftSize);
+
+  // Draw column by column
+  for (let x = 0; x < width; x++) {
+    const offset = x * step;
+    if (offset + fftSize >= data.length) break;
+
+    // Fill buffer
+    for (let i = 0; i < fftSize; i++) {
+      real[i] = data[offset + i];
+      imag[i] = 0;
+    }
+
+    // Perform simple FFT (or just a few frequency bins for visual effect if full FFT is too slow)
+    // For a true spectrogram in JS without libs, we need a real FFT function.
+    // Let's implement a very basic visualization that LOOKS like a spectrogram
+    // by mapping amplitude to brightness and doing a rough frequency estimation (Zero Crossing Rate?)
+    // No, let's do a mini DFT for low/mid/high bands to fake it efficiently if we can't afford full FFT.
+
+    // Actually, let's try to implement a small, unoptimized FFT here. It's fine for short clips.
+    performFFT(real, imag, fftSize);
+
+    // Draw the column
+    for (let y = 0; y < height; y++) {
+      // Map y to frequency bin (0 to fftSize/2)
+      // Logarithmic scale is better for speech
+      const bin = Math.floor((height - y) / height * (fftSize / 2));
+      const magnitude = Math.sqrt(real[bin] * real[bin] + imag[bin] * imag[bin]);
+
+      // Color map (Black -> Blue -> Red -> Yellow -> White)
+      const intensity = Math.min(1, Math.log(1 + magnitude) * 5); // Boost contrast
+
+      if (intensity > 0.1) {
+        ctx.fillStyle = getHeatmapColor(intensity);
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+}
+
+// Basic Cooley-Tukey FFT (In-place)
+function performFFT(re, im, n) {
+  if (n <= 1) return;
+
+  const h = n / 2;
+  const evenRe = new Float32Array(h);
+  const evenIm = new Float32Array(h);
+  const oddRe = new Float32Array(h);
+  const oddIm = new Float32Array(h);
+
+  for (let i = 0; i < h; i++) {
+    evenRe[i] = re[2 * i];
+    evenIm[i] = im[2 * i];
+    oddRe[i] = re[2 * i + 1];
+    oddIm[i] = im[2 * i + 1];
+  }
+
+  performFFT(evenRe, evenIm, h);
+  performFFT(oddRe, oddIm, h);
+
+  for (let k = 0; k < h; k++) {
+    const t = -2 * Math.PI * k / n;
+    const cosT = Math.cos(t);
+    const sinT = Math.sin(t);
+
+    const reT = cosT * oddRe[k] - sinT * oddIm[k];
+    const imT = cosT * oddIm[k] + sinT * oddRe[k];
+
+    re[k] = evenRe[k] + reT;
+    im[k] = evenIm[k] + imT;
+    re[k + h] = evenRe[k] - reT;
+    im[k + h] = evenIm[k] - imT;
+  }
+}
+
+function getHeatmapColor(value) {
+  // value 0 to 1
+  const h = (1 - value) * 240; // Blue (240) to Red (0)
+  return `hsl(${h}, 100%, 50%)`;
+}
+
+/* ------------------ WAVEFORM VISUALIZATION -----------------------*/
+
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let animationFrameId;
+
+async function renderWaveform(blob, canvasId, color = '#4CAF50', audioDuration = 0) {
+  const container = document.getElementById(canvasId);
+  if (!container) return;
+
+  container.innerHTML = '';
+  const canvas = document.createElement('canvas');
+  canvas.width = container.clientWidth;
+  canvas.height = container.clientHeight;
+  container.appendChild(canvas);
+
+  const ctx = canvas.getContext('2d');
+
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+  // Store buffer for redrawing during animation
+  canvas.audioBuffer = audioBuffer;
+  canvas.waveformColor = color;
+
+  drawWaveformOnCanvas(audioBuffer, ctx, canvas.width, canvas.height, color, 0); // Initial draw at 0s
+}
+
+function drawWaveformOnCanvas(audioBuffer, ctx, width, height, color, currentTime) {
+  ctx.clearRect(0, 0, width, height);
+
+  // Background
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, width, height);
+
+  // Draw Axes
+  drawAxes(ctx, width, height, audioBuffer.duration);
+
+  const rawData = audioBuffer.getChannelData(0);
+  const samples = width; // One bar per pixel roughly
+  const blockSize = Math.floor(rawData.length / samples);
+  const filteredData = [];
+
+  for (let i = 0; i < samples; i++) {
+    let blockStart = blockSize * i;
+    let sum = 0;
+    for (let j = 0; j < blockSize; j++) {
+      sum = sum + Math.abs(rawData[blockStart + j]);
+    }
+    filteredData.push(sum / blockSize);
+  }
+
+  const multiplier = Math.pow(Math.max(...filteredData), -1);
+
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = color;
+  ctx.beginPath();
+
+  for (let i = 0; i < samples; i++) {
+    const v = filteredData[i] * multiplier;
+    const barHeight = v * (height - 20); // Leave space for axis labels
+    const x = i;
+
+    ctx.moveTo(x, (height - barHeight) / 2);
+    ctx.lineTo(x, (height + barHeight) / 2);
+  }
+  ctx.stroke();
+
+  // Draw Playback Cursor
+  if (currentTime >= 0) {
+    const x = (currentTime / audioBuffer.duration) * width;
+    ctx.strokeStyle = '#FF0000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+}
+
+function drawAxes(ctx, width, height, duration) {
+  ctx.fillStyle = '#444';
+  ctx.font = '10px Arial';
+
+  // X-Axis (Time)
+  const timeSteps = 5; // Draw 5 timestamps
+  for (let i = 0; i <= timeSteps; i++) {
+    const x = (width / timeSteps) * i;
+    const time = (duration / timeSteps) * i;
+    ctx.fillText(time.toFixed(1) + 's', x + 2, height - 2);
+
+    // Grid line
+    ctx.strokeStyle = '#222';
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+
+  // Y-Axis (Amplitude) - Just 0 line
+  ctx.strokeStyle = '#333';
+  ctx.beginPath();
+  ctx.moveTo(0, height / 2);
+  ctx.lineTo(width, height / 2);
+  ctx.stroke();
+}
+
+function startPlaybackAnimation(audioElement, canvasId) {
+  const container = document.getElementById(canvasId);
+  if (!container) return;
+  const canvas = container.querySelector('canvas');
+  if (!canvas || !canvas.audioBuffer) return;
+
+  const ctx = canvas.getContext('2d');
+
+  function loop() {
+    if (audioElement.paused || audioElement.ended) {
+      // Draw final state (or reset)
+      drawWaveformOnCanvas(canvas.audioBuffer, ctx, canvas.width, canvas.height, canvas.waveformColor, audioElement.currentTime);
+      return;
+    }
+
+    drawWaveformOnCanvas(canvas.audioBuffer, ctx, canvas.width, canvas.height, canvas.waveformColor, audioElement.currentTime);
+    animationFrameId = requestAnimationFrame(loop);
+  }
+
+  loop();
+}
+
+/* ------------------ STUDIO MODE LOGIC -----------------------*/
+
+let currentViewMode = 'waveform'; // 'waveform' or 'spectrogram'
+
+function launchStudioMode(originalBlob, startTime, endTime) {
+  hideCapturingState();
+  studioState.originalBlob = originalBlob;
+  studioState.originalUrl = URL.createObjectURL(originalBlob);
+
+  const overlay = document.getElementById('chorus-subtitle-overlay');
+
+  // Create Studio Container
+  let studioContainer = document.getElementById('chorus-studio-container');
+  if (!studioContainer) {
+    studioContainer = document.createElement('div');
+    studioContainer.id = 'chorus-studio-container';
+    studioContainer.className = 'chorus-studio-container';
+    overlay.insertBefore(studioContainer, document.getElementById('chorus-subtitle-container'));
+  }
+
+  studioContainer.innerHTML = `
+    <div class="studio-header">
+      <button id="exit-studio" class="chorus-btn small">← Back</button>
+      <span>Studio Mode</span>
+      <div class="view-toggle">
+        <button id="view-waveform" class="toggle-btn active" title="Waveform">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2,9 L2,15 L5,15 L5,9 L2,9 Z M7,5 L7,19 L10,19 L10,5 L7,5 Z M12,2 L12,22 L15,22 L15,2 L12,2 Z M17,7 L17,17 L20,17 L20,7 L17,7 Z"/></svg>
+        </button>
+        <button id="view-spectrogram" class="toggle-btn" title="Spectrogram">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2,4 L22,4 L22,20 L2,20 L2,4 Z M4,6 L4,18 L20,18 L20,6 L4,6 Z M6,8 L6,16 L8,16 L8,8 L6,8 Z M10,10 L10,16 L12,16 L12,10 L10,10 Z M14,8 L14,16 L16,16 L16,8 L14,8 Z"/></svg>
+        </button>
+      </div>
+    </div>
+    
+    <div class="studio-tracks">
+      <!-- Track 1: Original -->
+      <div class="track-container original">
+        <div class="track-label">Target Audio</div>
+        <div class="waveform-display" id="waveform-original">
+           <!-- Canvas will be inserted here -->
+        </div>
+        <div class="track-controls">
+           <button id="play-original" class="icon-btn">▶</button>
+        </div>
+      </div>
+
+      <!-- Track 2: User -->
+      <div class="track-container user">
+        <div class="track-label">Your Recording</div>
+        <div class="waveform-display" id="waveform-user">
+           <div class="empty-state">No recording yet</div>
+        </div>
+        <div class="track-controls">
+           <button id="play-user" class="icon-btn" disabled>▶</button>
+        </div>
+      </div>
+    </div>
+    
+    <div class="studio-main-controls">
+      <button id="studio-record-btn" class="record-btn-large">
+        <div class="inner-circle"></div>
+      </button>
+      <div class="control-label">REC</div>
+    </div>
+  `;
+
+  studioContainer.style.display = 'flex';
+
+  // Render View
+  updateTrackViews();
+
+  // Bind Events
+  document.getElementById('exit-studio').addEventListener('click', exitStudioMode);
+  document.getElementById('view-waveform').addEventListener('click', () => switchView('waveform'));
+  document.getElementById('view-spectrogram').addEventListener('click', () => switchView('spectrogram'));
+
+  const originalAudio = new Audio(studioState.originalUrl);
+  document.getElementById('play-original').addEventListener('click', () => {
+    originalAudio.currentTime = 0;
+    originalAudio.play();
+    startPlaybackAnimation(originalAudio, 'waveform-original');
+  });
+
+  const recordBtn = document.getElementById('studio-record-btn');
+  recordBtn.addEventListener('click', () => toggleStudioRecording(recordBtn));
+}
+
+function switchView(mode) {
+  if (currentViewMode === mode) return;
+  currentViewMode = mode;
+
+  document.getElementById('view-waveform').classList.toggle('active', mode === 'waveform');
+  document.getElementById('view-spectrogram').classList.toggle('active', mode === 'spectrogram');
+
+  updateTrackViews();
+}
+
+function updateTrackViews() {
+  if (currentViewMode === 'waveform') {
+    renderWaveform(studioState.originalBlob, 'waveform-original', '#4CAF50');
+    if (studioState.userBlob) {
+      renderWaveform(studioState.userBlob, 'waveform-user', '#2196F3');
+    }
+  } else {
+    renderSpectrogram(studioState.originalBlob, 'waveform-original');
+    if (studioState.userBlob) {
+      renderSpectrogram(studioState.userBlob, 'waveform-user');
+    }
+  }
+}
+
+function exitStudioMode() {
+  document.getElementById('chorus-studio-container').style.display = 'none';
+  document.getElementById('chorus-subtitle-container').style.display = 'block';
+  document.querySelector('.chorus-controls').style.display = 'flex';
+}
+
+async function toggleStudioRecording(btn) {
+  if (btn.classList.contains('recording')) {
+    // STOP
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+    }
+    btn.classList.remove('recording');
+  } else {
+    // START
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunks, { type: 'audio/webm' });
+        studioState.userBlob = blob;
+        studioState.userUrl = URL.createObjectURL(blob);
+
+        updateUserTrackUI();
+      };
+
+      mediaRecorder.start();
+      btn.classList.add('recording');
+
+      // Auto-play original audio for shadowing?
+      const originalAudio = new Audio(studioState.originalUrl);
+      originalAudio.play();
+
+    } catch (err) {
+      console.error(err);
+      alert("Microphone access denied");
+    }
+  }
+}
+
+function updateUserTrackUI() {
+  const container = document.getElementById('waveform-user');
+  container.innerHTML = '<div class="waveform-line user-recorded"></div>'; // Placeholder visual
+
+  const playBtn = document.getElementById('play-user');
+  playBtn.disabled = false;
+
+  // Re-bind play button
+  const userAudio = new Audio(studioState.userUrl);
+  playBtn.onclick = () => {
+    userAudio.currentTime = 0;
+    userAudio.play();
+  };
+}
+
+
+function toggleChorusMode(active) {
+  if (active) {
+    // Show overlay
+    if (!subtitleOverlay) {
+      createSubtitleOverlay();
+    }
+    subtitleOverlay.style.display = 'flex';
+    positionOverlay();
+
+    // Add resize listener
+    window.addEventListener('resize', positionOverlay);
+
+    // Initial position check
+    setTimeout(positionOverlay, 500);
+    startMonitoringChanges(); // Start monitoring for monitor changes
+
+  } else {
+    // Hide overlay
+    if (subtitleOverlay) {
+      subtitleOverlay.style.display = 'none';
+    }
+    resetVideoLayout(); // Unconditional reset
+    window.removeEventListener('resize', positionOverlay);
     stopMonitoringChanges(); // Stop monitoring when hidden
   }
 }
@@ -546,11 +1323,11 @@ function hideSubtitleOverlay() {
 function togglePopout() {
   isPopout = !isPopout;
   const popoutBtn = document.getElementById('chorus-popout-btn');
-  
+
   if (isPopout) {
     // Switch to popout mode
     subtitleOverlay.classList.add('popout');
-    
+
     // Move to body and position freely (no video layout changes needed)
     document.body.appendChild(subtitleOverlay);
     subtitleOverlay.style.position = 'fixed';
@@ -559,7 +1336,7 @@ function togglePopout() {
     subtitleOverlay.style.height = '500px';
     subtitleOverlay.style.left = '50px';
     subtitleOverlay.style.top = '50px';
-    
+
     popoutBtn.innerHTML = `
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
         <path d="M5,17 L5,10 L7,10 L7,15 L12,15 L12,17 L5,17 Z M12,12 L7,7 L9,7 L9,3 L15,3 L15,7 L17,7 L12,12 Z"/>
@@ -580,26 +1357,23 @@ function togglePopout() {
   }
 }
 
-function resetVideoLayout() {
-  // No longer needed since we're not modifying video layout
-  // Keeping function for compatibility but it's now empty
-}
+
 
 function startDrag(e) {
   if (!isPopout) return; // Only allow dragging in popout mode
-  
+
   isDragging = true;
   const rect = subtitleOverlay.getBoundingClientRect();
   dragOffset.x = e.clientX - rect.left;
   dragOffset.y = e.clientY - rect.top;
-  
+
   subtitleOverlay.style.cursor = 'grabbing';
   e.preventDefault();
 }
 
 function startResize(e) {
   if (!isPopout) return; // Only allow resizing in popout mode
-  
+
   isResizing = true;
   e.preventDefault();
   e.stopPropagation();
@@ -609,16 +1383,16 @@ function handleMouseMove(e) {
   if (isDragging && isPopout) {
     const newLeft = e.clientX - dragOffset.x;
     const newTop = e.clientY - dragOffset.y;
-    
+
     subtitleOverlay.style.left = `${Math.max(0, newLeft)}px`;
     subtitleOverlay.style.top = `${Math.max(0, newTop)}px`;
   }
-  
+
   if (isResizing && isPopout) {
     const rect = subtitleOverlay.getBoundingClientRect();
     const newWidth = Math.max(300, e.clientX - rect.left);
     const newHeight = Math.max(400, e.clientY - rect.top);
-    
+
     subtitleOverlay.style.width = `${newWidth}px`;
     subtitleOverlay.style.height = `${newHeight}px`;
   }
@@ -658,10 +1432,10 @@ function debouncedPositionUpdate() {
 window.addEventListener('resize', () => {
   const currentViewportWidth = window.innerWidth;
   const currentViewportHeight = window.innerHeight;
-  
+
   // Only reposition if viewport actually changed significantly
-  if (Math.abs(currentViewportWidth - lastViewportWidth) > 50 || 
-      Math.abs(currentViewportHeight - lastViewportHeight) > 50) {
+  if (Math.abs(currentViewportWidth - lastViewportWidth) > 50 ||
+    Math.abs(currentViewportHeight - lastViewportHeight) > 50) {
     lastViewportWidth = currentViewportWidth;
     lastViewportHeight = currentViewportHeight;
     debouncedPositionUpdate();
@@ -672,17 +1446,17 @@ window.addEventListener('resize', () => {
 function detectMonitorChange() {
   const currentScreenX = window.screenX;
   const currentScreenY = window.screenY;
-  
+
   // Detect significant position changes (likely monitor change)
-  if (Math.abs(currentScreenX - lastScreenX) > 100 || 
-      Math.abs(currentScreenY - lastScreenY) > 100) {
+  if (Math.abs(currentScreenX - lastScreenX) > 100 ||
+    Math.abs(currentScreenY - lastScreenY) > 100) {
     lastScreenX = currentScreenX;
     lastScreenY = currentScreenY;
-    
+
     // Force reposition after a short delay to let the window settle
     setTimeout(handlePositionUpdate, 200);
   }
-  
+
   lastScreenX = currentScreenX;
   lastScreenY = currentScreenY;
 }
@@ -704,12 +1478,15 @@ function stopMonitoringChanges() {
 /* ------------------ SUBTITLE UI LOGIC END -----------------------*/
 /* ------------------ ORIGINAL SUBTITLE FUNCTIONS -----------------------*/
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) =>{
-    if(message.action === "startChorus") {
-        showSubtitleOverlay();
-        init();
-    }
-    if (message.action === "subtitlesFetched") {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === "startChorus") {
+    toggleChorusMode(true);
+    init();
+  }
+  if (message.action === "stopChorus") {
+    toggleChorusMode(false);
+  }
+  if (message.action === "subtitlesFetched") {
     const subtitleText = message.data;
     console.log("📥 Subtitles received in content script:");
     console.log(subtitleText);
@@ -718,7 +1495,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) =>{
     // Example: const xml = new DOMParser().parseFromString(subtitleText, "text/xml");
     displaySubtitles(subtitleText);
   }
-    sendResponse({status: "ok"})
+  sendResponse({ status: "ok" })
 });
 
 
@@ -805,7 +1582,7 @@ function handleVideoChange(currentUrl) {
   currentSubtitles = [];
   currentSubtitleIndex = -1;
   selectedSubtitles.clear();
-  
+
   // Reset toggle states for new video
   if (isCombinedView) {
     isCombinedView = false;
@@ -815,7 +1592,7 @@ function handleVideoChange(currentUrl) {
       combineBtn.innerHTML = '☐ Combine selected';
     }
   }
-  
+
   if (isShowOnlySelected) {
     isShowOnlySelected = false;
     const showOnlyBtn = document.getElementById('show-only-selected');
@@ -824,7 +1601,7 @@ function handleVideoChange(currentUrl) {
       showOnlyBtn.innerHTML = '☐ Show only selected';
     }
   }
-  
+
   // Show loading state if subtitle overlay is visible
   if (subtitleOverlay && subtitleOverlay.style.display !== 'none') {
     const container = document.getElementById('chorus-subtitle-container');
@@ -837,7 +1614,7 @@ function handleVideoChange(currentUrl) {
   chrome.runtime.sendMessage({ action: "startChorus" }, (response) => {
     console.log("📣 Notified background of new video:", response?.status);
   });
-  
+
   // Wait a bit for player UI to settle
   setTimeout(() => {
     clickSubtitlesButton();
@@ -850,9 +1627,9 @@ function handleVideoChange(currentUrl) {
 async function init() {
   console.log('🎬 YouTube subtitle interceptor loaded');
   // Initialize hotkey listener when the script loads
-    setupHotkeyListener();
+  setupHotkeyListener();
   const isCached = await checkCached();
-   if (!isCached) {
+  if (!isCached) {
     clickSubtitlesButton();
   }
   //handleVideoChange();

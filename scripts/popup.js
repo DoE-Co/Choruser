@@ -16,16 +16,17 @@ chorusBtn.addEventListener("click", () => {
     }
   );
 
-  // Only notify content script if activating
-  if (isActivating) {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      chrome.tabs.sendMessage(tabs[0].id, { action: "startChorus" }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.warn("❌ Could not send message:", chrome.runtime.lastError.message);
-        } else {
-          console.log("✅ startChorus message sent");
-        }
-      });
+  // Notify content script for both start and stop
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]?.id) return;
+
+    const action = isActivating ? "startChorus" : "stopChorus";
+    chrome.tabs.sendMessage(tabs[0].id, { action: action }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn("❌ Could not send message:", chrome.runtime.lastError.message);
+      } else {
+        console.log(`✅ ${action} message sent`);
+      }
     });
-  }
+  });
 });
