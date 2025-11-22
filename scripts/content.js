@@ -224,6 +224,69 @@ const additionalStyles = `
     display: none !important;
   }
 
+  /* Floating Studio Window Styles */
+  #chorus-studio-window {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 700px;
+    height: 550px;
+    background: #1e1e1e;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    z-index: 10001;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .studio-window-header {
+    background: #2a2a2a;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: move;
+    border-bottom: 1px solid #333;
+    user-select: none;
+  }
+
+  .studio-window-header span {
+    color: #fff;
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .studio-close-btn {
+    background: none;
+    border: none;
+    color: #aaa;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+
+  .studio-close-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+
+  .studio-window-content {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+
   /* Practice Mode Styles */
   .chorus-practice-container {
     padding: 15px;
@@ -582,12 +645,16 @@ function positionOverlay() {
 }
 
 function resetVideoLayout() {
+  console.log('🔄 Resetting video layout...');
   const videoElement = document.querySelector('.html5-main-video');
   if (videoElement) {
     videoElement.style.removeProperty('width');
     videoElement.style.removeProperty('left');
     videoElement.style.removeProperty('top');
     videoElement.style.removeProperty('object-fit');
+    console.log('✅ Video layout reset complete');
+  } else {
+    console.warn('⚠️ Video element not found during reset');
   }
 }
 
@@ -1122,6 +1189,76 @@ function startPlaybackAnimation(audioElement, canvasId) {
   loop();
 }
 
+/* ------------------ STUDIO WINDOW CREATION -----------------------*/
+
+let studioWindow = null;
+let isStudioDragging = false;
+let studioDragOffset = { x: 0, y: 0 };
+
+function createStudioWindow() {
+  if (studioWindow) return studioWindow;
+
+  const window = document.createElement('div');
+  window.id = 'chorus-studio-window';
+  window.innerHTML = `
+    <div class="studio-window-header" id="studio-window-header">
+      <span>Studio Mode</span>
+      <button class="studio-close-btn" id="studio-close-btn">×</button>
+    </div>
+    <div class="studio-window-content" id="studio-window-content">
+      <!-- Content will be inserted here -->
+    </div>
+  `;
+
+  document.body.appendChild(window);
+  studioWindow = window;
+
+  // Make draggable
+  const header = document.getElementById('studio-window-header');
+  header.addEventListener('mousedown', startStudioDrag);
+  document.addEventListener('mousemove', handleStudioDrag);
+  document.addEventListener('mouseup', stopStudioDrag);
+
+  return window;
+}
+
+function startStudioDrag(e) {
+  if (e.target.classList.contains('studio-close-btn')) return;
+
+  isStudioDragging = true;
+  const rect = studioWindow.getBoundingClientRect();
+  studioDragOffset.x = e.clientX - rect.left;
+  studioDragOffset.y = e.clientY - rect.top;
+
+  // Remove transform to allow absolute positioning
+  studioWindow.style.transform = 'none';
+  studioWindow.style.left = rect.left + 'px';
+  studioWindow.style.top = rect.top + 'px';
+
+  e.preventDefault();
+}
+
+function handleStudioDrag(e) {
+  if (!isStudioDragging) return;
+
+  const newLeft = e.clientX - studioDragOffset.x;
+  const newTop = e.clientY - studioDragOffset.y;
+
+  studioWindow.style.left = `${Math.max(0, newLeft)}px`;
+  studioWindow.style.top = `${Math.max(0, newTop)}px`;
+}
+
+function stopStudioDrag() {
+  isStudioDragging = false;
+}
+
+function removeStudioWindow() {
+  if (studioWindow) {
+    studioWindow.remove();
+    studioWindow = null;
+  }
+}
+
 /* ------------------ STUDIO MODE LOGIC -----------------------*/
 
 let currentViewMode = 'waveform'; // 'waveform' or 'spectrogram'
@@ -1131,70 +1268,67 @@ function launchStudioMode(originalBlob, startTime, endTime) {
   studioState.originalBlob = originalBlob;
   studioState.originalUrl = URL.createObjectURL(originalBlob);
 
-  const overlay = document.getElementById('chorus-subtitle-overlay');
+  // Create floating window
+  const window = createStudioWindow();
+  const content = document.getElementById('studio-window-content');
 
-  // Create Studio Container
-  let studioContainer = document.getElementById('chorus-studio-container');
-  if (!studioContainer) {
-    studioContainer = document.createElement('div');
-    studioContainer.id = 'chorus-studio-container';
-    studioContainer.className = 'chorus-studio-container';
-    overlay.insertBefore(studioContainer, document.getElementById('chorus-subtitle-container'));
-  }
+  content.innerHTML = `
+    <div class="chorus-studio-container">
+      <div class="studio-header">
+        <button id="exit-studio" class="chorus-btn small">← Back</button>
+        <span>Practice Audio</span>
+        <div class="view-toggle">
+          <button id="view-waveform" class="toggle-btn active" title="Waveform">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2,9 L2,15 L5,15 L5,9 L2,9 Z M7,5 L7,19 L10,19 L10,5 L7,5 Z M12,2 L12,22 L15,22 L15,2 L12,2 Z M17,7 L17,17 L20,17 L20,7 L17,7 Z"/></svg>
+          </button>
+          <button id="view-spectrogram" class="toggle-btn" title="Spectrogram">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2,4 L22,4 L22,20 L2,20 L2,4 Z M4,6 L4,18 L20,18 L20,6 L4,6 Z M6,8 L6,16 L8,16 L8,8 L6,8 Z M10,10 L10,16 L12,16 L12,10 L10,10 Z M14,8 L14,16 L16,16 L16,8 L14,8 Z"/></svg>
+          </button>
+        </div>
+      </div>
+      
+      <div class="studio-tracks">
+        <!-- Track 1: Original -->
+        <div class="track-container original">
+          <div class="track-label">Target Audio</div>
+          <div class="waveform-display" id="waveform-original">
+             <!-- Canvas will be inserted here -->
+          </div>
+          <div class="track-controls">
+             <button id="play-original" class="icon-btn">▶</button>
+          </div>
+        </div>
 
-  studioContainer.innerHTML = `
-    <div class="studio-header">
-      <button id="exit-studio" class="chorus-btn small">← Back</button>
-      <span>Studio Mode</span>
-      <div class="view-toggle">
-        <button id="view-waveform" class="toggle-btn active" title="Waveform">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2,9 L2,15 L5,15 L5,9 L2,9 Z M7,5 L7,19 L10,19 L10,5 L7,5 Z M12,2 L12,22 L15,22 L15,2 L12,2 Z M17,7 L17,17 L20,17 L20,7 L17,7 Z"/></svg>
+        <!-- Track 2: User -->
+        <div class="track-container user">
+          <div class="track-label">Your Recording</div>
+          <div class="waveform-display" id="waveform-user">
+             <div class="empty-state">No recording yet</div>
+          </div>
+          <div class="track-controls">
+             <button id="play-user" class="icon-btn" disabled>▶</button>
+          </div>
+        </div>
+      </div>
+      
+      <div class="studio-main-controls">
+        <button id="studio-record-btn" class="record-btn-large">
+          <div class="inner-circle"></div>
         </button>
-        <button id="view-spectrogram" class="toggle-btn" title="Spectrogram">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2,4 L22,4 L22,20 L2,20 L2,4 Z M4,6 L4,18 L20,18 L20,6 L4,6 Z M6,8 L6,16 L8,16 L8,8 L6,8 Z M10,10 L10,16 L12,16 L12,10 L10,10 Z M14,8 L14,16 L16,16 L16,8 L14,8 Z"/></svg>
-        </button>
+        <div class="control-label">REC</div>
       </div>
-    </div>
-    
-    <div class="studio-tracks">
-      <!-- Track 1: Original -->
-      <div class="track-container original">
-        <div class="track-label">Target Audio</div>
-        <div class="waveform-display" id="waveform-original">
-           <!-- Canvas will be inserted here -->
-        </div>
-        <div class="track-controls">
-           <button id="play-original" class="icon-btn">▶</button>
-        </div>
-      </div>
-
-      <!-- Track 2: User -->
-      <div class="track-container user">
-        <div class="track-label">Your Recording</div>
-        <div class="waveform-display" id="waveform-user">
-           <div class="empty-state">No recording yet</div>
-        </div>
-        <div class="track-controls">
-           <button id="play-user" class="icon-btn" disabled>▶</button>
-        </div>
-      </div>
-    </div>
-    
-    <div class="studio-main-controls">
-      <button id="studio-record-btn" class="record-btn-large">
-        <div class="inner-circle"></div>
-      </button>
-      <div class="control-label">REC</div>
     </div>
   `;
 
-  studioContainer.style.display = 'flex';
+  // Show window
+  window.style.display = 'block';
 
   // Render View
   updateTrackViews();
 
   // Bind Events
   document.getElementById('exit-studio').addEventListener('click', exitStudioMode);
+  document.getElementById('studio-close-btn').addEventListener('click', exitStudioMode);
   document.getElementById('view-waveform').addEventListener('click', () => switchView('waveform'));
   document.getElementById('view-spectrogram').addEventListener('click', () => switchView('spectrogram'));
 
@@ -1234,9 +1368,7 @@ function updateTrackViews() {
 }
 
 function exitStudioMode() {
-  document.getElementById('chorus-studio-container').style.display = 'none';
-  document.getElementById('chorus-subtitle-container').style.display = 'block';
-  document.querySelector('.chorus-controls').style.display = 'flex';
+  removeStudioWindow();
 }
 
 async function toggleStudioRecording(btn) {
