@@ -12,20 +12,17 @@
       "16": "./assets/icon16.png",
       "48": "./assets/icon48.png",
       "128": "./assets/icon128.png"
-    },
-    "js": ["./scripts/popup.js"],
-    "css": ["./styles/popup.css"]
+    }
   },
   "background": {
     "service_worker": "./scripts/background.js"
   },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*", "https://en.wikipedia.org/*"],
+      "matches": ["*://*.youtube.com/*"],
       "js": ["./scripts/content.js"],
       "css": ["./styles/content.css"],
       "run_at": "document_idle"
-
     }
   ]
 }

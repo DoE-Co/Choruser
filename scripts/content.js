@@ -1,1675 +1,3914 @@
-let lastUrl = location.href;
-let subtitleOverlay = null;
-let currentSubtitles = [];
-let currentSubtitleIndex = -1;
-let selectedSubtitles = new Set();
-let isCombinedView = false;
-let isShowOnlySelected = false;
+/**
+ * Chorus Mode - Language Learning Subtitle Browser v2.0
+ * Complete feature set with SRS, Practice Queue, History, and Advanced Audio Analysis
+ */
 
+// ============================================================================
+// STATE MANAGEMENT
+// ============================================================================
 
-/*------------------- Additional STYLES------------------------*/
-const additionalStyles = `
-  .chorus-subtitle-item.current.selected {
-    background: rgba(33, 150, 243, 0.4) !important;
-    border-color: #2196F3 !important;
-    box-shadow: 0 0 0 1px #4CAF50;
-  }
+const ChorusState = {
+  // UI State
+  isVisible: false,
+  isStudioOpen: false,
+  panelWidth: 380,
+  minPanelWidth: 300,
+  maxPanelWidth: 600,
   
-  .chorus-subtitle-text {
+  // Video State (stored for proper undo)
+  originalVideoStyles: null,
+  
+  // Subtitle State
+  subtitles: [],
+  currentIndex: -1,
+  
+  // Selection State
+  selectedIndices: new Set(),
+  selectionAnchor: null,
+  
+  // Bookmarks State (persisted to localStorage)
+  bookmarks: {}, // { videoId: Set of subtitle indices }
+  showingBookmarksOnly: false,
+  
+  // Studio State
+  originalAudioBlob: null,
+  originalAudioUrl: null,
+  originalAudioBuffer: null,
+  userAudioBlob: null,
+  userAudioUrl: null,
+  userAudioBuffer: null,
+  capturedStartTime: 0,
+  capturedEndTime: 0,
+  capturedSubtitleText: '',
+  
+  // Recording State
+  mediaRecorder: null,
+  audioChunks: [],
+  isRecording: false,
+  recordingAnalyser: null,
+  recordingStream: null,
+  
+  // Playback State
+  isLooping: false,
+  loopCount: 0,
+  playbackSpeed: 1.0,
+  listenCount: 1,
+  
+  // A-B Loop State
+  abLoopEnabled: false,
+  abLoopStart: 0, // 0 to 1 percentage
+  abLoopEnd: 1,
+  
+  // Visualization State
+  currentVizMode: 'waveform', // 'waveform', 'spectrogram', 'pitch', 'overlay'
+  
+  // Practice Queue
+  practiceQueue: [], // Array of { videoId, subtitleIndex, text, startTime, endTime }
+  currentQueueIndex: 0,
+  isQueueMode: false,
+  
+  // Practice History (persisted)
+  practiceHistory: [], // Array of { videoId, videoTitle, subtitleIndex, text, timestamp, score }
+  
+  // SRS State (persisted)
+  srsCards: [], // Array of SRS cards
+  
+  // Pronunciation Score
+  lastScore: null,
+  
+  // Scrubbing State
+  isScrubbing: false,
+  scrubAudioSource: null,
+  
+  // Hotkey Debounce
+  hotkeyLocked: false,
+  
+  // Audio Context
+  audioContext: null,
+};
+
+// ============================================================================
+// STYLES
+// ============================================================================
+
+const CHORUS_STYLES = `
+  /* ========== CSS VARIABLES ========== */
+  :root {
+    --chorus-bg-primary: rgba(18, 18, 22, 0.92);
+    --chorus-bg-secondary: rgba(28, 28, 35, 0.95);
+    --chorus-bg-tertiary: rgba(38, 38, 48, 0.9);
+    --chorus-glass: rgba(255, 255, 255, 0.03);
+    --chorus-glass-border: rgba(255, 255, 255, 0.08);
+    --chorus-glass-hover: rgba(255, 255, 255, 0.06);
+    
+    --chorus-text-primary: rgba(255, 255, 255, 0.95);
+    --chorus-text-secondary: rgba(255, 255, 255, 0.6);
+    --chorus-text-muted: rgba(255, 255, 255, 0.4);
+    
+    --chorus-accent: #6366f1;
+    --chorus-accent-glow: rgba(99, 102, 241, 0.3);
+    --chorus-accent-soft: rgba(99, 102, 241, 0.15);
+    
+    --chorus-success: #10b981;
+    --chorus-success-glow: rgba(16, 185, 129, 0.3);
+    
+    --chorus-danger: #ef4444;
+    --chorus-danger-glow: rgba(239, 68, 68, 0.4);
+    
+    --chorus-warning: #f59e0b;
+    
+    --chorus-current-line: rgba(99, 102, 241, 0.2);
+    --chorus-selected-line: rgba(16, 185, 129, 0.25);
+    --chorus-current-selected: rgba(99, 102, 241, 0.35);
+    
+    --chorus-radius-sm: 6px;
+    --chorus-radius-md: 10px;
+    --chorus-radius-lg: 16px;
+    --chorus-radius-xl: 24px;
+    
+    --chorus-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --chorus-shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
+    --chorus-shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
+    --chorus-shadow-glow: 0 0 30px var(--chorus-accent-glow);
+    
+    --chorus-transition-fast: 150ms ease;
+    --chorus-transition-normal: 250ms ease;
+    --chorus-transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ========== MAIN PANEL ========== */
+  #chorus-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 380px;
+    background: var(--chorus-bg-primary);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-right: 1px solid var(--chorus-glass-border);
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    z-index: 60;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--chorus-text-primary);
+    opacity: 0;
+    transform: translateX(-20px);
+    transition: opacity var(--chorus-transition-slow), transform var(--chorus-transition-slow);
+    overflow: hidden;
+  }
+
+  #chorus-panel.visible {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .chorus-controls-shifted .ytp-chrome-bottom {
+    left: var(--chorus-panel-width, 380px) !important;
+    width: calc(100% - var(--chorus-panel-width, 380px)) !important;
+    transition: left 0.25s ease, width 0.25s ease;
+  }
+
+  .chorus-controls-shifted .ytp-progress-bar-container {
+    width: 100% !important;
+  }
+
+  /* ========== HEADER ========== */
+  .chorus-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    background: var(--chorus-bg-secondary);
+    border-bottom: 1px solid var(--chorus-glass-border);
+    flex-shrink: 0;
+  }
+
+  .chorus-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .chorus-logo {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, var(--chorus-accent), #8b5cf6);
+    border-radius: var(--chorus-radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    box-shadow: var(--chorus-shadow-glow);
+  }
+
+  .chorus-title {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+
+  .chorus-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .chorus-hotkey-badge {
+    font-size: 10px;
+    color: var(--chorus-text-muted);
+    background: var(--chorus-glass);
+    padding: 3px 8px;
+    border-radius: var(--chorus-radius-sm);
+    border: 1px solid var(--chorus-glass-border);
+    font-family: 'SF Mono', 'Consolas', monospace;
+  }
+
+  .chorus-icon-btn {
+    width: 32px;
+    height: 32px;
+    background: var(--chorus-glass);
+    border: 1px solid var(--chorus-glass-border);
+    border-radius: var(--chorus-radius-sm);
+    color: var(--chorus-text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all var(--chorus-transition-fast);
+    position: relative;
+  }
+
+  .chorus-icon-btn:hover {
+    background: var(--chorus-glass-hover);
+    color: var(--chorus-text-primary);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .chorus-icon-btn.has-badge::after {
+    content: attr(data-badge);
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: var(--chorus-danger);
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 5px;
+    border-radius: 10px;
+    min-width: 16px;
+    text-align: center;
+  }
+
+  .chorus-close-btn {
+    font-size: 18px;
+  }
+
+  /* ========== SEARCH BAR ========== */
+  .chorus-search-bar {
+    padding: 10px 16px;
+    background: var(--chorus-bg-secondary);
+    border-bottom: 1px solid var(--chorus-glass-border);
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .chorus-search-input {
+    flex: 1;
+    background: var(--chorus-glass);
+    border: 1px solid var(--chorus-glass-border);
+    border-radius: var(--chorus-radius-md);
+    padding: 8px 12px 8px 32px;
+    color: var(--chorus-text-primary);
+    font-size: 13px;
+    outline: none;
+    transition: all var(--chorus-transition-fast);
+  }
+
+  .chorus-search-input::placeholder {
+    color: var(--chorus-text-muted);
+  }
+
+  .chorus-search-input:focus {
+    border-color: var(--chorus-accent);
+    background: rgba(99, 102, 241, 0.1);
+  }
+
+  .chorus-search-icon {
+    position: absolute;
+    left: 26px;
+    font-size: 12px;
+    opacity: 0.5;
     pointer-events: none;
   }
-  
-  .chorus-loading-overlay {
+
+  .chorus-search-count {
+    font-size: 11px;
+    color: var(--chorus-text-muted);
+    white-space: nowrap;
+  }
+
+  /* ========== FILTER BAR ========== */
+  .chorus-filter-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--chorus-glass-border);
+    font-size: 12px;
+    gap: 8px;
+  }
+
+  .chorus-filter-btn {
+    background: var(--chorus-glass);
+    border: 1px solid var(--chorus-glass-border);
+    border-radius: var(--chorus-radius-sm);
+    color: var(--chorus-text-secondary);
+    padding: 5px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all var(--chorus-transition-fast);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .chorus-filter-btn:hover {
+    background: var(--chorus-glass-hover);
+    color: var(--chorus-text-primary);
+  }
+
+  .chorus-filter-btn.active {
+    background: rgba(251, 191, 36, 0.2);
+    border-color: #fbbf24;
+    color: #fcd34d;
+  }
+
+  .chorus-bookmark-count {
+    color: var(--chorus-text-muted);
+    margin-left: auto;
+  }
+
+  /* ========== QUEUE INDICATOR ========== */
+  .chorus-queue-bar {
+    display: none;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
+    border-bottom: 1px solid var(--chorus-accent);
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .chorus-queue-bar.active {
+    display: flex;
+  }
+
+  .chorus-queue-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .chorus-queue-progress {
+    color: var(--chorus-accent);
+    font-weight: 600;
+  }
+
+  .chorus-queue-btn {
+    background: var(--chorus-accent);
+    border: none;
+    color: white;
+    padding: 4px 10px;
+    border-radius: var(--chorus-radius-sm);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all var(--chorus-transition-fast);
+  }
+
+  .chorus-queue-btn:hover {
+    background: #818cf8;
+  }
+
+  /* ========== SUBTITLE LIST ========== */
+  .chorus-subtitle-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  }
+
+  .chorus-subtitle-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .chorus-subtitle-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .chorus-subtitle-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+  }
+
+  /* ========== SUBTITLE TILE ========== */
+  .chorus-tile {
+    background: var(--chorus-glass);
+    border: 1px solid var(--chorus-glass-border);
+    border-radius: var(--chorus-radius-md);
+    padding: 16px 18px;
+    padding-right: 70px;
+    cursor: pointer;
+    transition: all var(--chorus-transition-fast);
+    position: relative;
+    overflow: hidden;
+    min-height: 70px;
+  }
+
+  .chorus-tile::before {
+    content: '';
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0,0,0,0.85);
+    background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.02) 100%);
+    pointer-events: none;
+  }
+
+  .chorus-tile:hover {
+    background: var(--chorus-glass-hover);
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+  }
+
+  .chorus-tile.current {
+    background: var(--chorus-current-line);
+    border-color: var(--chorus-accent);
+    box-shadow: inset 0 0 0 1px var(--chorus-accent-glow), var(--chorus-shadow-sm);
+  }
+
+  .chorus-tile.selected {
+    background: var(--chorus-selected-line);
+    border-color: var(--chorus-success);
+    box-shadow: inset 0 0 0 1px var(--chorus-success-glow);
+  }
+
+  .chorus-tile.current.selected {
+    background: var(--chorus-current-selected);
+    border-color: var(--chorus-accent);
+    box-shadow: inset 0 0 0 1px var(--chorus-accent-glow), 0 0 0 2px var(--chorus-success-glow);
+  }
+
+  .chorus-tile.in-queue {
+    border-left: 3px solid var(--chorus-accent);
+  }
+
+  .chorus-tile.in-queue::after {
+    content: '📋';
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    font-size: 12px;
+    opacity: 0.7;
+  }
+
+  .chorus-tile.bookmarked {
+    border-left: 3px solid #fbbf24;
+  }
+
+  .chorus-tile.search-highlight {
+    border-color: #fbbf24;
+    box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3);
+  }
+
+  .chorus-tile.search-highlight .chorus-tile-text {
+    color: #fcd34d;
+  }
+
+  .chorus-tile-text {
+    font-size: 18px;
+    line-height: 1.6;
+    color: var(--chorus-text-primary);
+    margin-bottom: 10px;
+    word-wrap: break-word;
+  }
+
+  .chorus-tile-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .chorus-tile-time {
+    font-size: 12px;
+    font-family: 'SF Mono', 'Consolas', monospace;
+    color: var(--chorus-text-muted);
+    background: var(--chorus-bg-tertiary);
+    padding: 5px 10px;
+    border-radius: var(--chorus-radius-sm);
+    cursor: pointer;
+    transition: all var(--chorus-transition-fast);
+    border: 1px solid transparent;
+  }
+
+  .chorus-tile-time:hover {
+    color: var(--chorus-accent);
+    background: var(--chorus-accent-soft);
+    border-color: var(--chorus-accent);
+  }
+
+  .chorus-tile-duration {
+    font-size: 11px;
+    color: var(--chorus-text-muted);
+  }
+
+  .chorus-tile-index {
+    position: absolute;
+    top: 14px;
+    right: 12px;
+    font-size: 11px;
+    color: var(--chorus-text-muted);
+    opacity: 0.5;
+  }
+
+  /* ========== BOOKMARK BUTTON ========== */
+  .chorus-bookmark-btn {
+    position: absolute;
+    top: 12px;
+    right: 40px;
+    width: 24px;
+    height: 24px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 13px;
+    opacity: 0.6;
+    transition: all var(--chorus-transition-fast);
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+  }
+
+  .chorus-bookmark-btn:hover {
+    opacity: 1;
+    background: rgba(251, 191, 36, 0.2);
+    border-color: rgba(251, 191, 36, 0.4);
+  }
+
+  .chorus-bookmark-btn.bookmarked {
+    opacity: 1;
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.15);
+    border-color: rgba(251, 191, 36, 0.4);
+  }
+
+  /* ========== EMPTY STATE ========== */
+  .chorus-empty-state {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    z-index: 100;
-    color: white;
+    padding: 40px 20px;
+    text-align: center;
   }
 
-  .spinner {
-    width: 40px;
-    height: 40px;
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #3498db;
+  .chorus-empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+  }
+
+  .chorus-empty-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--chorus-text-secondary);
+    margin-bottom: 8px;
+  }
+
+  .chorus-empty-subtitle {
+    font-size: 13px;
+    color: var(--chorus-text-muted);
+    max-width: 250px;
+    line-height: 1.5;
+  }
+
+  .chorus-loading-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid var(--chorus-glass-border);
+    border-top-color: var(--chorus-accent);
     border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin-bottom: 15px;
+    animation: chorus-spin 0.8s linear infinite;
+    margin-bottom: 16px;
   }
 
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+  @keyframes chorus-spin {
+    to { transform: rotate(360deg); }
   }
 
-  /* Studio Mode Styles */
-  .chorus-studio-container {
+  /* ========== FOOTER ========== */
+  .chorus-footer {
     display: flex;
     flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px;
+    background: var(--chorus-bg-secondary);
+    border-top: 1px solid var(--chorus-glass-border);
+    flex-shrink: 0;
+  }
+
+  .chorus-selection-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--chorus-text-secondary);
+  }
+
+  .chorus-selection-count {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .chorus-selection-badge {
+    background: var(--chorus-accent-soft);
+    color: var(--chorus-accent);
+    padding: 2px 8px;
+    border-radius: var(--chorus-radius-sm);
+    font-weight: 600;
+  }
+
+  .chorus-footer-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .chorus-btn {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: var(--chorus-radius-md);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--chorus-transition-fast);
+    border: 1px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .chorus-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .chorus-btn-secondary {
+    background: var(--chorus-glass);
+    border-color: var(--chorus-glass-border);
+    color: var(--chorus-text-secondary);
+  }
+
+  .chorus-btn-secondary:hover:not(:disabled) {
+    background: var(--chorus-glass-hover);
+    color: var(--chorus-text-primary);
+  }
+
+  .chorus-btn-primary {
+    background: linear-gradient(135deg, var(--chorus-accent), #8b5cf6);
+    color: white;
+    box-shadow: var(--chorus-shadow-sm), 0 0 20px var(--chorus-accent-glow);
+  }
+
+  .chorus-btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: var(--chorus-shadow-md), 0 0 30px var(--chorus-accent-glow);
+  }
+
+  .chorus-btn-queue {
+    background: rgba(251, 191, 36, 0.2);
+    border-color: #fbbf24;
+    color: #fcd34d;
+  }
+
+  .chorus-btn-queue:hover:not(:disabled) {
+    background: rgba(251, 191, 36, 0.3);
+  }
+
+  /* ========== RESIZE HANDLE ========== */
+  .chorus-resize-handle {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    width: 8px;
     height: 100%;
-    background: #121212;
-    color: #e0e0e0;
+    cursor: ew-resize;
+    z-index: 100;
+  }
+
+  .chorus-resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 3px;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 40px;
+    background: var(--chorus-glass-border);
+    border-radius: 2px;
+    opacity: 0;
+    transition: opacity var(--chorus-transition-fast);
+  }
+
+  .chorus-resize-handle:hover::after {
+    opacity: 1;
+  }
+
+  /* ========== STUDIO MODAL ========== */
+  #chorus-studio-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: all var(--chorus-transition-normal);
+  }
+
+  #chorus-studio-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  #chorus-studio-modal {
+    width: 95%;
+    max-width: 1000px;
+    max-height: 95vh;
+    background: linear-gradient(180deg, #1c1c30 0%, #161628 100%);
+    border-radius: var(--chorus-radius-xl);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: var(--chorus-shadow-lg), 0 0 80px rgba(99, 102, 241, 0.12);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: scale(0.95) translateY(20px);
+    transition: transform var(--chorus-transition-slow);
+  }
+
+  #chorus-studio-overlay.visible #chorus-studio-modal {
+    transform: scale(1) translateY(0);
   }
 
   .studio-header {
-    padding: 10px;
-    background: #1e1e1e;
-    border-bottom: 1px solid #333;
     display: flex;
     align-items: center;
-    gap: 10px;
-    justify-content: space-between; /* Space for toggle */
-  }
-
-  .view-toggle {
-    display: flex;
-    background: #333;
-    border-radius: 4px;
-    padding: 2px;
-  }
-
-  .toggle-btn {
-    background: none;
-    border: none;
-    color: #888;
-    padding: 4px 8px;
-    cursor: pointer;
-    border-radius: 2px;
-  }
-
-  .toggle-btn.active {
-    background: #555;
-    color: white;
-  }
-
-  .studio-tracks {
-    flex: 1;
-    padding: 10px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .track-container {
-    background: #1e1e1e;
-    border-radius: 6px;
-    padding: 10px;
-    border: 1px solid #333;
-  }
-
-  .track-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    color: #888;
-    margin-bottom: 5px;
-  }
-
-  .track-container.original .track-label { color: #4CAF50; }
-  .track-container.user .track-label { color: #2196F3; }
-
-  .waveform-display {
-    height: 60px;
-    background: #000;
-    border-radius: 4px;
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .waveform-line {
-    width: 100%;
-    height: 2px;
-    background: #4CAF50;
-    opacity: 0.5;
-  }
-  
-  .waveform-line.user-recorded {
-    background: #2196F3;
-  }
-
-  .track-controls {
-    margin-top: 5px;
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .icon-btn {
-    background: none;
-    border: none;
-    color: #fff;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-  }
-  .icon-btn:hover { background: rgba(255,255,255,0.1); }
-  .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-
-  .studio-main-controls {
-    padding: 20px;
-    background: #1e1e1e;
-    border-top: 1px solid #333;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .record-btn-large {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    background: #fff;
-    border: 4px solid #ccc;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .record-btn-large .inner-circle {
-    width: 24px;
-    height: 24px;
-    background: #ff4444;
-    border-radius: 50%;
-    transition: all 0.2s;
-  }
-
-  .record-btn-large:hover { border-color: #fff; }
-  
-  .record-btn-large.recording {
-    border-color: #ff4444;
-  }
-  .record-btn-large.recording .inner-circle {
-    border-radius: 4px; /* Square */
-    transform: scale(0.8);
-  }
-
-  .control-label {
-    margin-top: 8px;
-    font-size: 10px;
-    color: #888;
-    letter-spacing: 1px;
-  }
-  
-  .chorus-subtitle-time {
-    cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 3px;
-    transition: all 0.2s;
-    display: inline-block;
-    pointer-events: auto;
-  }
-  
-  .chorus-subtitle-time:hover {
-    background: rgba(255, 255, 255, 0.1);
-    opacity: 1;
-    transform: scale(1.05);
-  }
-  
-  .chorus-btn.toggle-active {
-    background: rgba(76, 175, 80, 0.8) !important;
-    border-color: #4CAF50 !important;
-  }
-  
-  .chorus-subtitle-item.hidden {
-    display: none !important;
-  }
-
-  /* Floating Studio Window Styles */
-  #chorus-studio-window {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 700px;
-    height: 550px;
-    background: #1e1e1e;
-    border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
-    z-index: 10001;
-    display: none;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .studio-window-header {
-    background: #2a2a2a;
-    padding: 12px 16px;
-    display: flex;
     justify-content: space-between;
-    align-items: center;
-    cursor: move;
-    border-bottom: 1px solid #333;
-    user-select: none;
+    padding: 16px 20px;
+    background: linear-gradient(180deg, rgba(35, 35, 55, 0.98) 0%, rgba(28, 28, 45, 0.98) 100%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
 
-  .studio-window-header span {
-    color: #fff;
-    font-weight: 600;
-    font-size: 14px;
+  .studio-title-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .studio-icon {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, #ff6b6b 0%, #f97316 100%);
+    border-radius: var(--chorus-radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+  }
+
+  .studio-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--chorus-text-primary);
+  }
+
+  .studio-subtitle {
+    font-size: 12px;
+    color: var(--chorus-text-secondary);
+    font-family: 'SF Mono', 'Consolas', monospace;
+  }
+
+  .studio-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .studio-close-btn {
-    background: none;
-    border: none;
-    color: #aaa;
-    font-size: 24px;
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--chorus-radius-md);
+    color: var(--chorus-text-secondary);
     cursor: pointer;
-    padding: 0;
-    width: 24px;
-    height: 24px;
+    font-size: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
-    transition: all 0.2s;
+    transition: all var(--chorus-transition-fast);
   }
 
   .studio-close-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: rgba(239, 68, 68, 0.2);
+    border-color: #ef4444;
+    color: #fca5a5;
   }
 
-  .studio-window-content {
+  .studio-content {
     flex: 1;
-    overflow: hidden;
+    padding: 20px;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
+    gap: 16px;
+    background: linear-gradient(180deg, #18182a 0%, #141424 100%);
   }
 
-
-  /* Practice Mode Styles */
-  .chorus-practice-container {
-    padding: 15px;
-    background: #1a1a1a;
-    color: white;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
+  /* ========== SUBTITLE DISPLAY IN STUDIO ========== */
+  .studio-subtitle-display {
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: var(--chorus-radius-md);
+    padding: 16px;
+    text-align: center;
   }
 
-  .practice-header {
+  .studio-subtitle-text {
+    font-size: 20px;
+    line-height: 1.5;
+    color: var(--chorus-text-primary);
+    margin-bottom: 8px;
+  }
+
+  .studio-subtitle-time {
+    font-size: 12px;
+    color: var(--chorus-text-muted);
+    font-family: 'SF Mono', 'Consolas', monospace;
+  }
+
+  /* ========== AUDIO TRACK ========== */
+  .audio-track {
+    background: var(--chorus-bg-secondary);
+    border-radius: var(--chorus-radius-lg);
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .track-header {
     display: flex;
     align-items: center;
-    gap: 10px;
-    font-size: 14px;
-    border-bottom: 1px solid #333;
-    padding-bottom: 10px;
+    justify-content: space-between;
+    margin-bottom: 10px;
   }
 
-  .chorus-record-btn {
-    width: 60px;
-    height: 60px;
+  .track-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  .track-label.original { color: #4ade80; }
+  .track-label.user { color: #818cf8; }
+
+  .track-dot {
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: #ff4444;
-    border: none;
-    color: white;
-    font-weight: bold;
+    box-shadow: 0 0 8px currentColor;
+  }
+
+  .track-dot.original { background: #4ade80; }
+  .track-dot.user { background: #818cf8; }
+
+  .track-controls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .track-btn {
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: var(--chorus-radius-sm);
+    color: var(--chorus-text-primary);
     cursor: pointer;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
-    margin: 0 auto;
+    font-size: 13px;
+    transition: all var(--chorus-transition-fast);
   }
 
-  .chorus-record-btn:hover {
-    transform: scale(1.1);
-    background: #ff2222;
+  .track-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.25);
   }
 
-  .chorus-record-btn.recording {
-    animation: pulse 1.5s infinite;
-    background: #cc0000;
-    border-radius: 10px; /* Square shape when stop */
+  .track-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
 
-  @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.7); }
-    70% { box-shadow: 0 0 0 15px rgba(255, 68, 68, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0); }
+  .track-btn.playing {
+    background: linear-gradient(135deg, #6366f1, #818cf8);
+    border-color: #818cf8;
+    color: white;
   }
 
-  .practice-controls {
+  /* ========== VIZ TABS ========== */
+  .viz-tabs {
     display: flex;
-    flex-direction: column;
-    gap: 15px;
-    align-items: center;
+    gap: 2px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 3px;
+    border-radius: var(--chorus-radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.05);
   }
 
-  .control-row {
-    display: flex;
-    gap: 10px;
+  .viz-tab {
+    padding: 5px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    background: transparent;
+    border: none;
+    color: var(--chorus-text-muted);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all var(--chorus-transition-fast);
+  }
+
+  .viz-tab:hover {
+    color: var(--chorus-text-secondary);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .viz-tab.active {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--chorus-text-primary);
+  }
+
+  /* ========== VISUALIZATION CONTAINER ========== */
+  .visualization-container {
+    background: linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);
+    border-radius: var(--chorus-radius-md);
+    height: 100px;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: crosshair;
+  }
+
+  .visualization-container canvas {
     width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .visualization-placeholder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
     justify-content: center;
+    color: var(--chorus-text-secondary);
+    font-size: 13px;
+    background: linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);
   }
 
-  .status-text {
-    text-align: center;
+  .playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #ff6b6b;
+    box-shadow: 0 0 10px rgba(255, 107, 107, 0.6);
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .playhead::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    width: 10px;
+    height: 10px;
+    background: #ff6b6b;
+    border-radius: 50%;
+  }
+
+  /* ========== A-B LOOP HANDLES ========== */
+  .ab-loop-region {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgba(99, 102, 241, 0.2);
+    border-left: 2px solid var(--chorus-accent);
+    border-right: 2px solid var(--chorus-accent);
+    pointer-events: none;
+    display: none;
+  }
+
+  .ab-loop-region.active {
+    display: block;
+  }
+
+  .ab-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 12px;
+    cursor: ew-resize;
+    z-index: 15;
+    display: none;
+  }
+
+  .ab-handle.active {
+    display: block;
+  }
+
+  .ab-handle::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 4px;
+    height: 30px;
+    background: var(--chorus-accent);
+    border-radius: 2px;
+  }
+
+  .ab-handle.start {
+    left: 0;
+    transform: translateX(-6px);
+  }
+
+  .ab-handle.end {
+    right: 0;
+    transform: translateX(6px);
+  }
+
+  /* ========== SCORE DISPLAY ========== */
+  .score-display {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 16px;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(99, 102, 241, 0.1));
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: var(--chorus-radius-lg);
+  }
+
+  .score-display.visible {
+    display: flex;
+  }
+
+  .score-circle {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: conic-gradient(var(--chorus-success) calc(var(--score) * 1%), rgba(255,255,255,0.1) 0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .score-circle::before {
+    content: '';
+    position: absolute;
+    width: 64px;
+    height: 64px;
+    background: #1a1a2e;
+    border-radius: 50%;
+  }
+
+  .score-value {
+    position: relative;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--chorus-success);
+  }
+
+  .score-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .score-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--chorus-text-primary);
+  }
+
+  .score-feedback {
     font-size: 12px;
-    color: #aaa;
-    margin-top: 5px;
+    color: var(--chorus-text-secondary);
   }
 
+  /* ========== PLAYBACK CONTROLS ========== */
+  .playback-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 16px;
+    background: linear-gradient(180deg, rgba(30, 30, 50, 0.8) 0%, rgba(25, 25, 45, 0.9) 100%);
+    border-radius: var(--chorus-radius-lg);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    flex-wrap: wrap;
+  }
+
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .control-group-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .control-label {
+    font-size: 9px;
+    color: var(--chorus-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 600;
+  }
+
+  .speed-btn, .listen-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--chorus-radius-sm);
+    color: var(--chorus-text-secondary);
+    cursor: pointer;
+    transition: all var(--chorus-transition-fast);
+  }
+
+  .speed-btn:hover, .listen-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--chorus-text-primary);
+  }
+
+  .speed-btn.active {
+    background: rgba(99, 102, 241, 0.3);
+    border-color: #818cf8;
+    color: #c7d2fe;
+  }
+
+  .listen-btn.active {
+    background: rgba(251, 191, 36, 0.25);
+    border-color: #fbbf24;
+    color: #fcd34d;
+  }
+
+  .loop-btn, .ab-loop-btn {
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--chorus-radius-md);
+    color: var(--chorus-text-secondary);
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--chorus-transition-fast);
+  }
+
+  .loop-btn:hover, .ab-loop-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--chorus-text-primary);
+  }
+
+  .loop-btn.active {
+    background: rgba(74, 222, 128, 0.25);
+    border-color: #4ade80;
+    color: #86efac;
+  }
+
+  .ab-loop-btn.active {
+    background: rgba(99, 102, 241, 0.25);
+    border-color: #818cf8;
+    color: #c7d2fe;
+  }
+
+  /* ========== RECORD BUTTON ========== */
+  .record-btn-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .record-btn {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #2a2a40 0%, #1e1e30 100%);
+    border: 4px solid rgba(255, 255, 255, 0.15);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--chorus-transition-fast);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .record-btn-inner {
+    width: 24px;
+    height: 24px;
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+    border-radius: 50%;
+    transition: all var(--chorus-transition-fast);
+    box-shadow: 0 0 15px rgba(255, 107, 107, 0.4);
+  }
+
+  .record-btn:hover {
+    border-color: rgba(255, 107, 107, 0.5);
+    transform: scale(1.05);
+  }
+
+  .record-btn.recording {
+    border-color: #ff6b6b;
+    animation: pulse-record 1.5s ease-in-out infinite;
+  }
+
+  .record-btn.recording .record-btn-inner {
+    border-radius: 4px;
+    transform: scale(0.7);
+  }
+
+  @keyframes pulse-record {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.5); }
+    50% { box-shadow: 0 0 0 15px transparent; }
+  }
+
+  .record-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--chorus-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* ========== COMPARE BUTTON ========== */
+  .compare-btn {
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--chorus-radius-md);
+    color: var(--chorus-text-secondary);
+    cursor: pointer;
+    transition: all var(--chorus-transition-fast);
+    white-space: nowrap;
+  }
+
+  .compare-btn:hover:not(:disabled) {
+    background: rgba(129, 140, 248, 0.2);
+    border-color: #818cf8;
+    color: #c7d2fe;
+  }
+
+  .compare-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .compare-btn.playing {
+    background: linear-gradient(135deg, #6366f1, #818cf8);
+    border-color: #818cf8;
+    color: white;
+  }
+
+  /* ========== SRS BUTTON ========== */
+  .srs-btn {
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(245, 158, 11, 0.2));
+    border: 1px solid #fbbf24;
+    border-radius: var(--chorus-radius-md);
+    color: #fcd34d;
+    cursor: pointer;
+    transition: all var(--chorus-transition-fast);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .srs-btn:hover {
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.3), rgba(245, 158, 11, 0.3));
+    transform: translateY(-1px);
+  }
+
+  /* ========== REAL-TIME WAVEFORM ========== */
+  .realtime-waveform {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+  }
+
+  /* ========== COUNTDOWN OVERLAY ========== */
+  .countdown-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10002;
+    opacity: 0;
+    visibility: hidden;
+    transition: all var(--chorus-transition-fast);
+  }
+
+  .countdown-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .countdown-number {
+    font-size: 100px;
+    font-weight: 800;
+    color: #fbbf24;
+    text-shadow: 0 0 40px rgba(251, 191, 36, 0.5);
+    animation: countdown-pulse 1s ease-in-out;
+  }
+
+  @keyframes countdown-pulse {
+    0% { transform: scale(0.5); opacity: 0; }
+    50% { transform: scale(1.1); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .countdown-label {
+    font-size: 14px;
+    color: var(--chorus-text-secondary);
+    margin-top: 12px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+
+  .countdown-listen-label {
+    font-size: 13px;
+    color: #fbbf24;
+    margin-top: 6px;
+  }
+
+  /* ========== CAPTURE LOADING ========== */
+  .capture-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 50px 20px;
+    text-align: center;
+  }
+
+  .capture-spinner {
+    width: 44px;
+    height: 44px;
+    border: 4px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #818cf8;
+    border-radius: 50%;
+    animation: chorus-spin 0.8s linear infinite;
+    margin-bottom: 20px;
+  }
+
+  .capture-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--chorus-text-primary);
+    margin-bottom: 8px;
+  }
+
+  .capture-subtitle {
+    font-size: 13px;
+    color: var(--chorus-text-secondary);
+  }
+
+  /* ========== QUEUE MODE HEADER ========== */
+  .queue-mode-header {
+    display: none;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.15));
+    border-bottom: 1px solid var(--chorus-accent);
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .queue-mode-header.active {
+    display: flex;
+  }
+
+  .queue-mode-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .queue-mode-progress {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--chorus-accent);
+  }
+
+  .queue-mode-nav {
+    display: flex;
+    gap: 6px;
+  }
+
+  .queue-nav-btn {
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: var(--chorus-radius-sm);
+    color: var(--chorus-text-primary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all var(--chorus-transition-fast);
+  }
+
+  .queue-nav-btn:hover:not(:disabled) {
+    background: var(--chorus-accent);
+    border-color: var(--chorus-accent);
+  }
+
+  .queue-nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ========== TOAST ========== */
+  .chorus-toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--chorus-bg-secondary);
+    border: 1px solid var(--chorus-glass-border);
+    border-radius: var(--chorus-radius-md);
+    padding: 12px 20px;
+    color: var(--chorus-text-primary);
+    font-size: 13px;
+    z-index: 10003;
+    box-shadow: var(--chorus-shadow-lg);
+    opacity: 0;
+    transition: all var(--chorus-transition-normal);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .chorus-toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .chorus-toast.error {
+    border-color: var(--chorus-danger);
+    background: rgba(239, 68, 68, 0.15);
+  }
+
+  .chorus-toast.success {
+    border-color: var(--chorus-success);
+    background: rgba(16, 185, 129, 0.15);
+  }
+
+  .chorus-toast.warning {
+    border-color: var(--chorus-warning);
+    background: rgba(245, 158, 11, 0.15);
+  }
 `;
 
-// Add the styles to the page
-function addSubtitleStyles() {
-  const styleElement = document.createElement('style');
-  styleElement.textContent = additionalStyles;
-  document.head.appendChild(styleElement);
-}
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
 
-
-/* ------------------ UTILITY FUNCTIONS -----------------------*/
-// Utility function to format time - MUST be defined before displaySubtitles
 function formatTime(seconds) {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
-/* ------------------ HOTKEY FUNCTIONALITY -----------------------*/
-// Global hotkey handler for toggling subtitle browser
-function setupHotkeyListener() {
-  document.addEventListener('keydown', (e) => {
-    // Check if 'h' key is pressed
-    if (e.key.toLowerCase() === 'h') {
-      // Don't trigger if user is typing in an input field
-      const activeElement = document.activeElement;
-      const isTyping = activeElement && (
-        activeElement.tagName === 'INPUT' ||
-        activeElement.tagName === 'TEXTAREA' ||
-        activeElement.contentEditable === 'true' ||
-        activeElement.isContentEditable
-      );
 
-      // Don't trigger if modifier keys are pressed (Ctrl+H, Alt+H, etc.)
-      if (isTyping || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) {
-        return;
-      }
-
-      // Only trigger on YouTube video pages
-      if (!window.location.href.includes('/watch')) {
-        return;
-      }
-
-      // Prevent default behavior and stop propagation
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Toggle subtitle browser visibility
-      toggleSubtitleBrowser();
-    }
-  }, true); // Use capture phase to intercept before YouTube's handlers
+function formatDuration(startTime, endTime) {
+  const duration = endTime - startTime;
+  if (duration < 1) {
+    return `${Math.round(duration * 1000)}ms`;
+  }
+  return `${duration.toFixed(1)}s`;
 }
 
-function toggleSubtitleBrowser() {
-  if (!subtitleOverlay || subtitleOverlay.style.display === 'none') {
-    // Show
-    toggleChorusMode(true);
-    init();
-  } else {
-    // Hide
-    toggleChorusMode(false);
+function getAudioContext() {
+  if (!ChorusState.audioContext || ChorusState.audioContext.state === 'closed') {
+    ChorusState.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return ChorusState.audioContext;
+}
+
+function showToast(message, type = 'info') {
+  let toast = document.getElementById('chorus-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'chorus-toast';
+    toast.className = 'chorus-toast';
+    document.body.appendChild(toast);
   }
 
-  console.log('🎵 Subtitle browser toggled via hotkey');
-}
-/* ------------------ SUBTITLE UI LOGIC -----------------------*/
-// Create the subtitle overlay UI
-function createSubtitleOverlay() {
-  if (subtitleOverlay) return; // Already exists
+  toast.textContent = message;
+  toast.className = `chorus-toast ${type}`;
+  toast.offsetHeight;
+  toast.classList.add('visible');
 
-  addSubtitleStyles();
-  const overlay = document.createElement('div');
-  overlay.id = 'chorus-subtitle-overlay';
-  overlay.innerHTML = `
-    <div class="chorus-header" id="chorus-header">
-      <div class="chorus-title">
-        <span class="chorus-icon">🎵</span>
-        Chorus Mode
-        <span class="chorus-hotkey-hint">(Press 'H' to toggle)</span>
+  setTimeout(() => {
+    toast.classList.remove('visible');
+  }, 3000);
+}
+
+function getVideoId() {
+  const url = new URL(window.location.href);
+  return url.searchParams.get('v') || 'unknown';
+}
+
+function getVideoTitle() {
+  const titleEl = document.querySelector('h1.ytd-video-primary-info-renderer, h1.ytd-watch-metadata');
+  return titleEl?.textContent?.trim() || document.title || 'Unknown Video';
+}
+
+// ============================================================================
+// PERSISTENCE FUNCTIONS
+// ============================================================================
+
+function loadAllData() {
+  loadBookmarks();
+  loadPracticeHistory();
+  loadSRSCards();
+  loadPracticeQueue();
+}
+
+function loadBookmarks() {
+  try {
+    const stored = localStorage.getItem('chorus-bookmarks');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      for (const videoId in parsed) {
+        ChorusState.bookmarks[videoId] = new Set(parsed[videoId]);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to load bookmarks:', e);
+  }
+}
+
+function saveBookmarks() {
+  try {
+    const toStore = {};
+    for (const videoId in ChorusState.bookmarks) {
+      toStore[videoId] = Array.from(ChorusState.bookmarks[videoId]);
+    }
+    localStorage.setItem('chorus-bookmarks', JSON.stringify(toStore));
+  } catch (e) {
+    console.warn('Failed to save bookmarks:', e);
+  }
+}
+
+function loadPracticeHistory() {
+  chrome.storage.local.get('chorus-history', (result) => {
+    if (result['chorus-history']) {
+      ChorusState.practiceHistory = result['chorus-history'];
+    }
+  });
+}
+
+function savePracticeHistory() {
+  // Keep only last 500 entries
+  if (ChorusState.practiceHistory.length > 500) {
+    ChorusState.practiceHistory = ChorusState.practiceHistory.slice(-500);
+  }
+  chrome.storage.local.set({ 'chorus-history': ChorusState.practiceHistory });
+}
+
+function addToHistory(score = null) {
+  const entry = {
+    videoId: getVideoId(),
+    videoTitle: getVideoTitle(),
+    subtitleText: ChorusState.capturedSubtitleText,
+    startTime: ChorusState.capturedStartTime,
+    endTime: ChorusState.capturedEndTime,
+    timestamp: Date.now(),
+    score: score
+  };
+  
+  // Read existing history first, then add new entry (avoid race condition)
+  chrome.storage.local.get('chorus-history', (result) => {
+    let history = result['chorus-history'] || [];
+    history.push(entry);
+    // Keep only last 500 entries
+    if (history.length > 500) {
+      history = history.slice(-500);
+    }
+    chrome.storage.local.set({ 'chorus-history': history }, () => {
+      ChorusState.practiceHistory = history;
+    });
+  });
+}
+
+function loadSRSCards() {
+  chrome.storage.local.get('chorus-srs-cards', (result) => {
+    if (result['chorus-srs-cards']) {
+      ChorusState.srsCards = result['chorus-srs-cards'];
+    }
+  });
+}
+
+function saveSRSCards() {
+  chrome.storage.local.set({ 'chorus-srs-cards': ChorusState.srsCards });
+}
+
+function loadPracticeQueue() {
+  chrome.storage.local.get('chorus-queue', (result) => {
+    if (result['chorus-queue']) {
+      ChorusState.practiceQueue = result['chorus-queue'];
+    }
+  });
+}
+
+function savePracticeQueue() {
+  chrome.storage.local.set({ 'chorus-queue': ChorusState.practiceQueue });
+}
+
+// ============================================================================
+// SRS SYSTEM (SM-2 Algorithm)
+// ============================================================================
+
+function createSRSCard() {
+  if (!ChorusState.originalAudioBlob || !ChorusState.capturedSubtitleText) {
+    showToast('No audio captured yet!', 'warning');
+    return;
+  }
+  
+  // Convert blob to base64 for storage
+  const reader = new FileReader();
+  reader.onload = () => {
+    const card = {
+      id: Date.now().toString(),
+      videoId: getVideoId(),
+      videoTitle: getVideoTitle(),
+      text: ChorusState.capturedSubtitleText,
+      startTime: ChorusState.capturedStartTime,
+      endTime: ChorusState.capturedEndTime,
+      audioBase64: reader.result,
+      created: Date.now(),
+      // SM-2 fields
+      interval: 1,
+      repetition: 0,
+      easeFactor: 2.5,
+      nextReview: Date.now(),
+      lastReview: null
+    };
+    
+    // Read existing cards first, then add new one (avoid race condition)
+    chrome.storage.local.get('chorus-srs-cards', (result) => {
+      const existingCards = result['chorus-srs-cards'] || [];
+      existingCards.push(card);
+      chrome.storage.local.set({ 'chorus-srs-cards': existingCards }, () => {
+        ChorusState.srsCards = existingCards;
+        showToast('Added to flashcards! 📚', 'success');
+        updateSRSBadge();
+      });
+    });
+  };
+  
+  reader.readAsDataURL(ChorusState.originalAudioBlob);
+}
+
+function reviewSRSCard(cardId, quality) {
+  // quality: 0-5 (0-2 = again, 3 = hard, 4 = good, 5 = easy)
+  const card = ChorusState.srsCards.find(c => c.id === cardId);
+  if (!card) return;
+  
+  // SM-2 Algorithm
+  if (quality >= 3) {
+    if (card.repetition === 0) {
+      card.interval = 1;
+    } else if (card.repetition === 1) {
+      card.interval = 6;
+    } else {
+      card.interval = Math.round(card.interval * card.easeFactor);
+    }
+    card.repetition++;
+  } else {
+    card.repetition = 0;
+    card.interval = 1;
+  }
+  
+  card.easeFactor = Math.max(1.3, card.easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)));
+  card.lastReview = Date.now();
+  card.nextReview = Date.now() + (card.interval * 24 * 60 * 60 * 1000);
+  
+  saveSRSCards();
+  updateSRSBadge();
+}
+
+function getDueCards() {
+  const now = Date.now();
+  return ChorusState.srsCards.filter(card => card.nextReview <= now);
+}
+
+function updateSRSBadge() {
+  const dueCount = getDueCards().length;
+  const badge = document.getElementById('chorus-srs-badge');
+  if (badge) {
+    if (dueCount > 0) {
+      badge.setAttribute('data-badge', dueCount);
+      badge.classList.add('has-badge');
+    } else {
+      badge.classList.remove('has-badge');
+    }
+  }
+}
+
+// ============================================================================
+// VIDEO LAYOUT MANAGEMENT
+// ============================================================================
+
+function storeOriginalVideoStyles() {
+  const video = document.querySelector('.html5-main-video');
+  if (video && !ChorusState.originalVideoStyles) {
+    ChorusState.originalVideoStyles = {
+      width: video.style.width || '',
+      left: video.style.left || '',
+      top: video.style.top || '',
+      objectFit: video.style.objectFit || '',
+    };
+  }
+}
+
+function applyVideoLayout(panelWidth) {
+  const video = document.querySelector('.html5-main-video');
+  const player = document.querySelector('#movie_player') || document.querySelector('.html5-video-player');
+  
+  const gap = 8;
+  const totalOffset = panelWidth + gap;
+  
+  if (video) {
+    storeOriginalVideoStyles();
+    video.style.width = `calc(100% - ${totalOffset}px)`;
+    video.style.left = `${totalOffset}px`;
+    video.style.top = '0';
+    video.style.objectFit = 'contain';
+  }
+  
+  if (player) {
+    player.classList.add('chorus-controls-shifted');
+    player.style.setProperty('--chorus-panel-width', `${totalOffset}px`);
+  }
+}
+
+function restoreVideoLayout() {
+  const video = document.querySelector('.html5-main-video');
+  const player = document.querySelector('#movie_player') || document.querySelector('.html5-video-player');
+  
+  if (video && ChorusState.originalVideoStyles) {
+    video.style.width = ChorusState.originalVideoStyles.width;
+    video.style.left = ChorusState.originalVideoStyles.left;
+    video.style.top = ChorusState.originalVideoStyles.top;
+    video.style.objectFit = ChorusState.originalVideoStyles.objectFit;
+  } else if (video) {
+    video.style.width = '';
+    video.style.left = '';
+    video.style.top = '';
+    video.style.objectFit = '';
+  }
+  
+  if (player) {
+    player.classList.remove('chorus-controls-shifted');
+    player.style.removeProperty('--chorus-panel-width');
+  }
+}
+
+// ============================================================================
+// PANEL CREATION
+// ============================================================================
+
+function injectStyles() {
+  if (document.getElementById('chorus-styles')) return;
+  
+  const style = document.createElement('style');
+  style.id = 'chorus-styles';
+  style.textContent = CHORUS_STYLES;
+  document.head.appendChild(style);
+}
+
+function createPanel() {
+  if (document.getElementById('chorus-panel')) return;
+  
+  const player = document.querySelector('#movie_player') || document.querySelector('.html5-video-player');
+  if (!player) {
+    console.warn('YouTube player not found');
+    return;
+  }
+
+  const panel = document.createElement('div');
+  panel.id = 'chorus-panel';
+  panel.innerHTML = `
+    <div class="chorus-header">
+      <div class="chorus-brand">
+        <div class="chorus-logo">🎵</div>
+        <div>
+          <div class="chorus-title">Chorus Mode</div>
+        </div>
       </div>
-      <div class="chorus-header-controls">
-        <button class="chorus-control-btn" id="chorus-popout-btn" title="Pop out / Dock">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19,7 L19,14 L17,14 L17,9 L12,9 L12,7 L19,7 Z M12,12 L17,17 L15,17 L15,21 L9,21 L9,17 L7,17 L12,12 Z"/>
-          </svg>
-        </button>
-        <button class="chorus-control-btn" id="chorus-close-btn" title="Close">×</button>
+      <div class="chorus-header-actions">
+        <span class="chorus-hotkey-badge">H</span>
+        <button class="chorus-icon-btn" id="chorus-history-btn" title="Practice History">📊</button>
+        <button class="chorus-icon-btn" id="chorus-srs-btn" title="Flashcards">📚</button>
+        <button class="chorus-icon-btn chorus-close-btn" id="chorus-close" title="Close">×</button>
       </div>
     </div>
-    <div class="chorus-subtitle-container" id="chorus-subtitle-container">
-      <div class="chorus-loading">Loading subtitles...</div>
+    
+    <div class="chorus-search-bar">
+      <input type="text" id="chorus-search-input" class="chorus-search-input" placeholder="Search subtitles...">
+      <span class="chorus-search-icon">🔍</span>
+      <span class="chorus-search-count" id="chorus-search-count"></span>
     </div>
-    <div class="chorus-controls">
-      <button id="chorus-clear-btn" class="chorus-btn clear" disabled>Clear</button>
-      <button id="chorus-create-btn" class="chorus-btn primary" disabled>Create</button>
+    
+    <div class="chorus-filter-bar">
+      <div style="display: flex; gap: 6px;">
+        <button class="chorus-filter-btn" id="chorus-bookmark-filter">⭐ Bookmarks</button>
+        <button class="chorus-filter-btn" id="chorus-queue-filter">📋 Queue (<span id="queue-count">0</span>)</button>
+      </div>
+      <span class="chorus-bookmark-count" id="chorus-bookmark-count"></span>
     </div>
+    
+    <div class="chorus-queue-bar" id="chorus-queue-bar">
+      <div class="chorus-queue-info">
+        <span>📋 Queue Mode</span>
+        <span class="chorus-queue-progress" id="queue-progress">1/5</span>
+      </div>
+      <button class="chorus-queue-btn" id="exit-queue-mode">Exit Queue</button>
+    </div>
+    
+    <div class="chorus-subtitle-list" id="chorus-subtitle-list">
+      <div class="chorus-empty-state">
+        <div class="chorus-loading-spinner"></div>
+        <div class="chorus-empty-title">Loading Subtitles</div>
+        <div class="chorus-empty-subtitle">Please wait...</div>
+      </div>
+    </div>
+    
+    <div class="chorus-footer">
+      <div class="chorus-selection-info">
+        <div class="chorus-selection-count">
+          <span>Selected:</span>
+          <span class="chorus-selection-badge" id="chorus-selection-count">0</span>
+        </div>
+        <span id="chorus-selection-range"></span>
+      </div>
+      <div class="chorus-footer-actions">
+        <button class="chorus-btn chorus-btn-secondary" id="chorus-clear-btn" disabled>Clear</button>
+        <button class="chorus-btn chorus-btn-queue" id="chorus-add-queue-btn" disabled>+ Queue</button>
+        <button class="chorus-btn chorus-btn-primary" id="chorus-practice-btn" disabled>🎤 Practice</button>
+      </div>
+    </div>
+    
     <div class="chorus-resize-handle" id="chorus-resize-handle"></div>
   `;
 
-  document.body.appendChild(overlay);
-  subtitleOverlay = overlay;
-
-  // Add event listeners
-  setupOverlayEventListeners();
-
-  // Position overlay
-  positionOverlay();
+  player.appendChild(panel);
+  setupPanelEvents();
+  updateQueueCount();
+  updateSRSBadge();
 }
 
-// Update your setupOverlayEventListeners function to include these changes:
-function setupOverlayEventListeners() {
-  // Close button
-  document.getElementById('chorus-close-btn').addEventListener('click', () => {
-    toggleChorusMode(false);
-  });
-
-  // Popout button
-  document.getElementById('chorus-popout-btn').addEventListener('click', togglePopout);
-
-  // Control buttons
-  // Removed combine-selected and show-only-selected
+function setupPanelEvents() {
+  document.getElementById('chorus-close').addEventListener('click', () => hidePanel());
   document.getElementById('chorus-clear-btn').addEventListener('click', clearSelection);
-  document.getElementById('chorus-create-btn').addEventListener('click', createPractice);
+  document.getElementById('chorus-practice-btn').addEventListener('click', startPractice);
+  document.getElementById('chorus-add-queue-btn').addEventListener('click', addToQueue);
+  document.getElementById('chorus-bookmark-filter').addEventListener('click', toggleBookmarkFilter);
+  document.getElementById('chorus-queue-filter').addEventListener('click', toggleQueueFilter);
+  document.getElementById('exit-queue-mode').addEventListener('click', exitQueueMode);
+  document.getElementById('chorus-history-btn').addEventListener('click', showHistoryModal);
+  document.getElementById('chorus-srs-btn').addEventListener('click', showSRSModal);
 
-  // Handle subtitle item clicks (for selection) - UPDATED
-  document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('chorus-subtitle-item')) {
-      toggleSubtitleSelection(e.target);
-    }
+  const searchInput = document.getElementById('chorus-search-input');
+  searchInput.addEventListener('input', (e) => filterSubtitles(e.target.value));
+
+  // Resize
+  const resizeHandle = document.getElementById('chorus-resize-handle');
+  let isResizing = false;
+
+  resizeHandle.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    e.preventDefault();
   });
 
-  // Handle timestamp clicks (for seeking) - NEW
-  document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('chorus-subtitle-time')) {
-      const subtitleItem = e.target.closest('.chorus-subtitle-item');
-      if (subtitleItem) {
-        const startTime = parseFloat(subtitleItem.dataset.startTime);
-        seekToTime(startTime);
-      }
-    }
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    const panel = document.getElementById('chorus-panel');
+    const player = panel.parentElement;
+    const playerRect = player.getBoundingClientRect();
+    let newWidth = e.clientX - playerRect.left;
+    newWidth = Math.max(ChorusState.minPanelWidth, Math.min(ChorusState.maxPanelWidth, newWidth));
+    ChorusState.panelWidth = newWidth;
+    panel.style.width = `${newWidth}px`;
+    applyVideoLayout(newWidth);
   });
 
-  // Handle video time updates to highlight current subtitle
+  document.addEventListener('mouseup', () => { isResizing = false; });
+
   const video = document.querySelector('video');
   if (video) {
     video.addEventListener('timeupdate', updateCurrentSubtitle);
   }
-
-  // Dragging functionality
-  const header = document.getElementById('chorus-header');
-  header.addEventListener('mousedown', startDrag);
-
-  // Resizing functionality
-  const resizeHandle = document.getElementById('chorus-resize-handle');
-  resizeHandle.addEventListener('mousedown', startResize);
-
-  // Global mouse events
-  document.addEventListener('mousemove', handleMouseMove);
-  document.addEventListener('mouseup', stopDragResize);
 }
 
-// Add this new function for seeking - NEW
-function seekToTime(seconds) {
-  const video = document.querySelector('video');
-  if (video) {
-    video.currentTime = seconds;
-    console.log(`🎯 Seeking to ${formatTime(seconds)}`);
+// ============================================================================
+// PANEL VISIBILITY
+// ============================================================================
+
+function showPanel() {
+  if (ChorusState.isVisible) return;
+  
+  injectStyles();
+  createPanel();
+  
+  const panel = document.getElementById('chorus-panel');
+  if (panel) {
+    panel.style.width = `${ChorusState.panelWidth}px`;
+    applyVideoLayout(ChorusState.panelWidth);
+    requestAnimationFrame(() => panel.classList.add('visible'));
+    ChorusState.isVisible = true;
   }
 }
 
-function toggleCombineSelected() {
-  isCombinedView = !isCombinedView;
-  const btn = document.getElementById('combine-selected');
+function hidePanel() {
+  const panel = document.getElementById('chorus-panel');
+  if (panel) {
+    panel.classList.remove('visible');
+    setTimeout(() => restoreVideoLayout(), 250);
+    ChorusState.isVisible = false;
+  }
+}
 
-  if (isCombinedView) {
-    btn.classList.add('toggle-active');
-    btn.innerHTML = '☑ Combine selected';
+function togglePanel() {
+  if (ChorusState.hotkeyLocked) return;
+  ChorusState.hotkeyLocked = true;
+  
+  if (ChorusState.isVisible) {
+    hidePanel();
   } else {
-    btn.classList.remove('toggle-active');
-    btn.innerHTML = '☐ Combine selected';
-
+    showPanel();
+    loadSubtitles();
   }
+  
+  setTimeout(() => { ChorusState.hotkeyLocked = false; }, 400);
 }
 
-function toggleShowOnlySelected() {
-  isShowOnlySelected = !isShowOnlySelected;
-  const btn = document.getElementById('show-only-selected');
+// ============================================================================
+// SUBTITLE RENDERING
+// ============================================================================
 
-  if (isShowOnlySelected) {
-    btn.classList.add('toggle-active');
-    btn.innerHTML = '☑ Show only selected';
-    showOnlySelectedSubtitles();
-  } else {
-    btn.classList.remove('toggle-active');
-    btn.innerHTML = '☐ Show only selected';
-    showAllSubtitles();
+function renderSubtitles(subtitles) {
+  ChorusState.subtitles = subtitles;
+  const list = document.getElementById('chorus-subtitle-list');
+  if (!list) return;
+
+  const searchInput = document.getElementById('chorus-search-input');
+  const searchCount = document.getElementById('chorus-search-count');
+  if (searchInput) searchInput.value = '';
+  if (searchCount) searchCount.textContent = '';
+
+  ChorusState.showingBookmarksOnly = false;
+  const bookmarkFilterBtn = document.getElementById('chorus-bookmark-filter');
+  if (bookmarkFilterBtn) {
+    bookmarkFilterBtn.classList.remove('active');
+    bookmarkFilterBtn.textContent = '⭐ Bookmarks';
   }
-}
-
-
-
-
-// Only implement the show/hide functionality
-function showOnlySelectedSubtitles() {
-  document.querySelectorAll('.chorus-subtitle-item').forEach(item => {
-    const index = parseInt(item.dataset.index);
-    if (!selectedSubtitles.has(index)) {
-      item.classList.add('hidden');
-    }
-  });
-
-  console.log('👁 Showing only selected subtitles');
-}
-
-function showAllSubtitles() {
-  document.querySelectorAll('.chorus-subtitle-item').forEach(item => {
-    item.classList.remove('hidden');
-  });
-
-  console.log('👁 Showing all subtitles');
-}
-
-let isPopout = false;
-let isDragging = false;
-let isResizing = false;
-let dragOffset = { x: 0, y: 0 };
-
-/* ------------------ POSITIONING LOGIC -----------------------*/
-
-/* ------------------ POSITIONING LOGIC -----------------------*/
-
-function positionOverlay() {
-  if (!subtitleOverlay) return;
-
-  if (isPopout) {
-    resetVideoLayout();
-    return;
-  }
-
-  // DOCKED MODE: Left side INSIDE the video player
-  const player = document.querySelector('#movie_player') || document.querySelector('.html5-video-player');
-  const videoElement = document.querySelector('.html5-main-video');
-  const controlsHeight = 54; // Height of YouTube bottom control bar
-
-  if (player) {
-    // Ensure overlay is a child of the player
-    if (subtitleOverlay.parentNode !== player) {
-      player.appendChild(subtitleOverlay);
-    }
-
-    // 1. Position Overlay
-    subtitleOverlay.style.position = 'absolute';
-    subtitleOverlay.style.top = '0';
-    subtitleOverlay.style.left = '0';
-    subtitleOverlay.style.bottom = `${controlsHeight}px`; // Stop above controls
-    subtitleOverlay.style.right = 'auto';
-    subtitleOverlay.style.width = '350px';
-    subtitleOverlay.style.height = 'auto'; // Let top/bottom define height
-    subtitleOverlay.style.zIndex = '60';
-    subtitleOverlay.style.borderRight = '1px solid rgba(255,255,255,0.1)';
-    subtitleOverlay.style.background = 'rgba(18, 18, 18, 0.95)';
-    subtitleOverlay.style.boxShadow = 'none';
-
-    // 2. Resize Video (Side-by-Side)
-    if (videoElement) {
-      videoElement.style.width = 'calc(100% - 350px)';
-      videoElement.style.left = '350px';
-      videoElement.style.top = '0';
-      videoElement.style.objectFit = 'contain'; // Prevent clipping
-      // YouTube uses 'left' for positioning, so this shifts it.
-      // 'width' ensures it fits the remaining space.
-    }
-
-  } else {
-    // Fallback
-    subtitleOverlay.style.position = 'fixed';
-    subtitleOverlay.style.left = '0';
-    subtitleOverlay.style.top = '56px';
-    subtitleOverlay.style.bottom = '0';
-    subtitleOverlay.style.width = '350px';
-  }
-}
-
-function resetVideoLayout() {
-  console.log('🔄 Resetting video layout...');
-  const videoElement = document.querySelector('.html5-main-video');
-  if (videoElement) {
-    videoElement.style.removeProperty('width');
-    videoElement.style.removeProperty('left');
-    videoElement.style.removeProperty('top');
-    videoElement.style.removeProperty('object-fit');
-    console.log('✅ Video layout reset complete');
-  } else {
-    console.warn('⚠️ Video element not found during reset');
-  }
-}
-
-function displaySubtitles(subtitles) {
-  currentSubtitles = subtitles;
-  const container = document.getElementById('chorus-subtitle-container');
 
   if (!subtitles || subtitles.length === 0) {
-    container.innerHTML = '<div class="chorus-loading">No subtitles available</div>';
+    list.innerHTML = `
+      <div class="chorus-empty-state">
+        <div class="chorus-empty-icon">📭</div>
+        <div class="chorus-empty-title">No Subtitles Available</div>
+        <div class="chorus-empty-subtitle">This video doesn't have subtitles, or they haven't loaded yet.</div>
+      </div>
+    `;
     return;
   }
 
-  container.innerHTML = '';
-
-  subtitles.forEach((subtitle, index) => {
-    const item = document.createElement('div');
-    item.className = 'chorus-subtitle-item';
-    item.dataset.index = index;
-    item.dataset.startTime = subtitle.startTime;
-    item.dataset.endTime = subtitle.endTime; // Use the corrected endTime from background
-
-    item.innerHTML = `
-      <div class="chorus-subtitle-text">${subtitle.text}</div>
-      <div class="chorus-subtitle-time">
-        ${formatTime(subtitle.startTime)} - ${formatTime(subtitle.endTime)}
+  list.innerHTML = '';
+  
+  subtitles.forEach((sub, index) => {
+    const tile = document.createElement('div');
+    tile.className = 'chorus-tile';
+    tile.dataset.index = index;
+    tile.dataset.startTime = sub.startTime;
+    tile.dataset.endTime = sub.endTime;
+    
+    const duration = formatDuration(sub.startTime, sub.endTime);
+    const bookmarked = isBookmarked(index);
+    const inQueue = isInQueue(index);
+    
+    if (bookmarked) tile.classList.add('bookmarked');
+    if (inQueue) tile.classList.add('in-queue');
+    
+    tile.innerHTML = `
+      <button class="chorus-bookmark-btn ${bookmarked ? 'bookmarked' : ''}" title="Bookmark">
+        ${bookmarked ? '★' : '☆'}
+      </button>
+      <span class="chorus-tile-index">#${index + 1}</span>
+      <div class="chorus-tile-text">${sub.text}</div>
+      <div class="chorus-tile-meta">
+        <span class="chorus-tile-time" data-time="${sub.startTime}">
+          ${formatTime(sub.startTime)} → ${formatTime(sub.endTime)}
+        </span>
+        <span class="chorus-tile-duration">${duration}</span>
       </div>
     `;
 
-    container.appendChild(item);
+    tile.addEventListener('click', (e) => {
+      if (e.target.classList.contains('chorus-tile-time')) return;
+      if (e.target.classList.contains('chorus-bookmark-btn')) return;
+      handleTileClick(index);
+    });
+
+    const bookmarkBtn = tile.querySelector('.chorus-bookmark-btn');
+    bookmarkBtn.addEventListener('click', (e) => toggleBookmark(index, e));
+
+    const timeEl = tile.querySelector('.chorus-tile-time');
+    timeEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      seekToTime(sub.startTime);
+    });
+
+    list.appendChild(tile);
   });
+  
+  updateBookmarkCount();
+  updateQueueCount();
 }
 
 function updateCurrentSubtitle() {
   const video = document.querySelector('video');
-  if (!video || !currentSubtitles.length) return;
+  if (!video || !ChorusState.subtitles.length) return;
 
   const currentTime = video.currentTime;
-
-  // Find the active subtitle: the one whose startTime has passed but next subtitle hasn't started yet
   let newIndex = -1;
 
-  for (let i = 0; i < currentSubtitles.length; i++) {
-    const currentSub = currentSubtitles[i];
-    const nextSub = currentSubtitles[i + 1];
+  for (let i = 0; i < ChorusState.subtitles.length; i++) {
+    const sub = ChorusState.subtitles[i];
+    const nextSub = ChorusState.subtitles[i + 1];
 
-    // Check if current time is at or after this subtitle's start time
-    if (currentTime >= currentSub.startTime) {
-      // If there's a next subtitle, check if we haven't reached its start time yet
+    if (currentTime >= sub.startTime) {
       if (nextSub) {
         if (currentTime < nextSub.startTime) {
           newIndex = i;
           break;
         }
       } else {
-        // This is the last subtitle, so it stays active if we're past its start time
         newIndex = i;
         break;
       }
-    } else {
-      // We haven't reached this subtitle's start time yet, so no subtitle is active
-      break;
     }
   }
 
-  if (newIndex !== currentSubtitleIndex) {
-    // Remove previous highlight
-    if (currentSubtitleIndex >= 0) {
-      const prevItem = document.querySelector(`[data-index="${currentSubtitleIndex}"]`);
-      if (prevItem) prevItem.classList.remove('current');
+  if (newIndex !== ChorusState.currentIndex) {
+    if (ChorusState.currentIndex >= 0) {
+      const prevTile = document.querySelector(`.chorus-tile[data-index="${ChorusState.currentIndex}"]`);
+      if (prevTile) prevTile.classList.remove('current');
     }
 
-    // Add new highlight
-    currentSubtitleIndex = newIndex;
-    if (currentSubtitleIndex >= 0) {
-      const currentItem = document.querySelector(`[data-index="${currentSubtitleIndex}"]`);
-      if (currentItem) {
-        currentItem.classList.add('current');
-        // Auto-scroll to current subtitle
-        currentItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    ChorusState.currentIndex = newIndex;
+    if (newIndex >= 0) {
+      const currentTile = document.querySelector(`.chorus-tile[data-index="${newIndex}"]`);
+      if (currentTile) {
+        currentTile.classList.add('current');
+        currentTile.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
   }
 }
 
-function toggleSubtitleSelection(item) {
-  const index = parseInt(item.dataset.index);
+function seekToTime(seconds) {
+  const video = document.querySelector('video');
+  if (video) video.currentTime = seconds;
+}
 
-  if (selectedSubtitles.has(index)) {
-    selectedSubtitles.delete(index);
-    item.classList.remove('selected');
+// ============================================================================
+// SELECTION & FILTERING
+// ============================================================================
+
+function handleTileClick(index) {
+  if (ChorusState.selectedIndices.size === 0) {
+    ChorusState.selectedIndices.add(index);
+    ChorusState.selectionAnchor = index;
+  } else if (ChorusState.selectedIndices.has(index)) {
+    ChorusState.selectedIndices.clear();
+    ChorusState.selectionAnchor = null;
   } else {
-    selectedSubtitles.add(index);
-    item.classList.add('selected');
+    const currentIndices = Array.from(ChorusState.selectedIndices).sort((a, b) => a - b);
+    const min = Math.min(...currentIndices, index);
+    const max = Math.max(...currentIndices, index);
+    ChorusState.selectedIndices.clear();
+    for (let i = min; i <= max; i++) {
+      ChorusState.selectedIndices.add(i);
+    }
   }
-
-  updateControlButtons();
+  updateSelectionUI();
 }
 
+function updateSelectionUI() {
+  document.querySelectorAll('.chorus-tile').forEach(tile => {
+    const index = parseInt(tile.dataset.index);
+    tile.classList.toggle('selected', ChorusState.selectedIndices.has(index));
+  });
 
-
-function updateControlButtons() {
-  const hasSelection = selectedSubtitles.size > 0;
-  const hasMultipleSelection = selectedSubtitles.size > 1;
-
-  // Removed combineBtn and showOnlyBtn
+  const countEl = document.getElementById('chorus-selection-count');
+  const rangeEl = document.getElementById('chorus-selection-range');
   const clearBtn = document.getElementById('chorus-clear-btn');
-  const createBtn = document.getElementById('chorus-create-btn');
-
-  // Only disable if elements exist (they might not during initialization)
-  if (clearBtn) clearBtn.disabled = !hasSelection; // Clear button enabled if any selection
-  if (createBtn) createBtn.disabled = !hasSelection;
-
-  // Reset toggle states if no valid selection
-  // Removed logic for combine and show only toggles
+  const practiceBtn = document.getElementById('chorus-practice-btn');
+  const queueBtn = document.getElementById('chorus-add-queue-btn');
+  
+  const count = ChorusState.selectedIndices.size;
+  countEl.textContent = count;
+  
+  if (count > 0) {
+    const indices = Array.from(ChorusState.selectedIndices).sort((a, b) => a - b);
+    const first = ChorusState.subtitles[indices[0]];
+    const last = ChorusState.subtitles[indices[indices.length - 1]];
+    rangeEl.textContent = `${formatTime(first.startTime)} - ${formatTime(last.endTime)}`;
+    clearBtn.disabled = false;
+    practiceBtn.disabled = false;
+    queueBtn.disabled = false;
+  } else {
+    rangeEl.textContent = '';
+    clearBtn.disabled = true;
+    practiceBtn.disabled = true;
+    queueBtn.disabled = true;
+  }
 }
-
 
 function clearSelection() {
-  selectedSubtitles.clear();
+  ChorusState.selectedIndices.clear();
+  ChorusState.selectionAnchor = null;
+  updateSelectionUI();
+}
 
-  // Reset toggles if active
-  if (isCombinedView) {
-    toggleCombineSelected();
+function filterSubtitles(query) {
+  const tiles = document.querySelectorAll('.chorus-tile');
+  const searchCount = document.getElementById('chorus-search-count');
+  const normalizedQuery = query.toLowerCase().trim();
+  
+  if (!normalizedQuery) {
+    tiles.forEach(tile => {
+      tile.style.display = '';
+      tile.classList.remove('search-highlight');
+    });
+    searchCount.textContent = '';
+    return;
   }
-  if (isShowOnlySelected) {
-    toggleShowOnlySelected();
-  }
-
-  document.querySelectorAll('.chorus-subtitle-item.selected').forEach(item => {
-    item.classList.remove('selected');
+  
+  let matchCount = 0;
+  tiles.forEach(tile => {
+    const text = tile.querySelector('.chorus-tile-text').textContent.toLowerCase();
+    if (text.includes(normalizedQuery)) {
+      tile.style.display = '';
+      tile.classList.add('search-highlight');
+      matchCount++;
+    } else {
+      tile.style.display = 'none';
+      tile.classList.remove('search-highlight');
+    }
   });
-  updateControlButtons();
+  
+  searchCount.textContent = `${matchCount} found`;
 }
 
-// UPDATED createPractice function
-async function createPractice() {
-  const selectedIndices = Array.from(selectedSubtitles).sort((a, b) => a - b);
-  if (selectedIndices.length === 0) return;
+// ============================================================================
+// BOOKMARKS
+// ============================================================================
 
-  let startTime, endTime;
-
-  if (isCombinedView) {
-    const firstSubtitle = currentSubtitles[selectedIndices[0]];
-    const lastSubtitle = currentSubtitles[selectedIndices[selectedIndices.length - 1]];
-    startTime = firstSubtitle.startTime;
-    endTime = lastSubtitle.endTime;
+function toggleBookmark(index, event) {
+  event.stopPropagation();
+  
+  const videoId = getVideoId();
+  if (!ChorusState.bookmarks[videoId]) {
+    ChorusState.bookmarks[videoId] = new Set();
+  }
+  
+  const bookmarks = ChorusState.bookmarks[videoId];
+  const tile = document.querySelector(`.chorus-tile[data-index="${index}"]`);
+  const btn = tile.querySelector('.chorus-bookmark-btn');
+  
+  if (bookmarks.has(index)) {
+    bookmarks.delete(index);
+    tile.classList.remove('bookmarked');
+    btn.classList.remove('bookmarked');
+    btn.textContent = '☆';
   } else {
-    const firstSubtitle = currentSubtitles[selectedIndices[0]];
-    const lastSubtitle = currentSubtitles[selectedIndices[selectedIndices.length - 1]];
-    startTime = firstSubtitle.startTime;
-    endTime = lastSubtitle.endTime;
+    bookmarks.add(index);
+    tile.classList.add('bookmarked');
+    btn.classList.add('bookmarked');
+    btn.textContent = '★';
   }
+  
+  saveBookmarks();
+  updateBookmarkCount();
+}
 
-  console.log(`🎯 Preparing Practice: ${formatTime(startTime)} - ${formatTime(endTime)}`);
+function isBookmarked(index) {
+  const videoId = getVideoId();
+  return ChorusState.bookmarks[videoId]?.has(index) || false;
+}
 
-  // 1. Hide Selection UI
-  document.getElementById('chorus-subtitle-container').style.display = 'none';
-  document.querySelector('.chorus-controls').style.display = 'none';
+function updateBookmarkCount() {
+  const videoId = getVideoId();
+  const count = ChorusState.bookmarks[videoId]?.size || 0;
+  const countEl = document.getElementById('chorus-bookmark-count');
+  if (countEl) countEl.textContent = count > 0 ? `${count} saved` : '';
+}
 
-  // 2. Show "Capturing" State
-  showCapturingState();
-
-  // 3. Capture the Audio
-  try {
-    const originalAudioBlob = await captureOriginalAudio(startTime, endTime);
-    // 4. Launch Studio Mode with the captured audio
-    launchStudioMode(originalAudioBlob, startTime, endTime);
-  } catch (err) {
-    console.error("Capture failed:", err);
-    alert("Failed to capture audio. Please try again.");
-    // Restore UI
-    document.getElementById('chorus-subtitle-container').style.display = 'block';
-    document.querySelector('.chorus-controls').style.display = 'flex';
+function toggleBookmarkFilter() {
+  ChorusState.showingBookmarksOnly = !ChorusState.showingBookmarksOnly;
+  const btn = document.getElementById('chorus-bookmark-filter');
+  const videoId = getVideoId();
+  const bookmarks = ChorusState.bookmarks[videoId] || new Set();
+  
+  if (ChorusState.showingBookmarksOnly) {
+    btn.classList.add('active');
+    btn.textContent = '★ Bookmarks';
+    document.querySelectorAll('.chorus-tile').forEach(tile => {
+      const index = parseInt(tile.dataset.index);
+      tile.style.display = bookmarks.has(index) ? '' : 'none';
+    });
+  } else {
+    btn.classList.remove('active');
+    btn.textContent = '⭐ Bookmarks';
+    document.querySelectorAll('.chorus-tile').forEach(tile => {
+      tile.style.display = '';
+    });
   }
 }
 
-function showCapturingState() {
-  const overlay = document.getElementById('chorus-subtitle-overlay');
-  let loader = document.getElementById('chorus-loader');
-  if (!loader) {
-    loader = document.createElement('div');
-    loader.id = 'chorus-loader';
-    loader.className = 'chorus-loading-overlay';
-    overlay.appendChild(loader);
+// ============================================================================
+// PRACTICE QUEUE
+// ============================================================================
+
+function addToQueue() {
+  if (ChorusState.selectedIndices.size === 0) return;
+  
+  const videoId = getVideoId();
+  const indices = Array.from(ChorusState.selectedIndices).sort((a, b) => a - b);
+  
+  indices.forEach(index => {
+    const sub = ChorusState.subtitles[index];
+    if (!isInQueue(index)) {
+      ChorusState.practiceQueue.push({
+        videoId,
+        subtitleIndex: index,
+        text: sub.text,
+        startTime: sub.startTime,
+        endTime: sub.endTime
+      });
+    }
+  });
+  
+  savePracticeQueue();
+  updateQueueCount();
+  
+  // Update tile UI
+  document.querySelectorAll('.chorus-tile').forEach(tile => {
+    const idx = parseInt(tile.dataset.index);
+    if (ChorusState.selectedIndices.has(idx)) {
+      tile.classList.add('in-queue');
+    }
+  });
+  
+  clearSelection();
+  showToast(`Added ${indices.length} to queue!`, 'success');
+}
+
+function isInQueue(index) {
+  const videoId = getVideoId();
+  return ChorusState.practiceQueue.some(item => 
+    item.videoId === videoId && item.subtitleIndex === index
+  );
+}
+
+function updateQueueCount() {
+  const countEl = document.getElementById('queue-count');
+  if (countEl) countEl.textContent = ChorusState.practiceQueue.length;
+}
+
+function toggleQueueFilter() {
+  const videoId = getVideoId();
+  const queueIndices = new Set(
+    ChorusState.practiceQueue
+      .filter(item => item.videoId === videoId)
+      .map(item => item.subtitleIndex)
+  );
+  
+  const btn = document.getElementById('chorus-queue-filter');
+  const isActive = btn.classList.toggle('active');
+  
+  document.querySelectorAll('.chorus-tile').forEach(tile => {
+    const index = parseInt(tile.dataset.index);
+    if (isActive) {
+      tile.style.display = queueIndices.has(index) ? '' : 'none';
+    } else {
+      tile.style.display = '';
+    }
+  });
+}
+
+function startQueueMode() {
+  if (ChorusState.practiceQueue.length === 0) {
+    showToast('Queue is empty!', 'warning');
+    return;
   }
-  loader.innerHTML = `
-    <div class="spinner"></div>
-    <div class="loading-text">Extracting Audio...</div>
-    <div class="loading-subtext">Please wait while we capture the segment</div>
+  
+  ChorusState.isQueueMode = true;
+  ChorusState.currentQueueIndex = 0;
+  
+  document.getElementById('chorus-queue-bar').classList.add('active');
+  updateQueueProgress();
+  practiceQueueItem(0);
+}
+
+function exitQueueMode() {
+  ChorusState.isQueueMode = false;
+  document.getElementById('chorus-queue-bar').classList.remove('active');
+  closeStudio();
+}
+
+function updateQueueProgress() {
+  const progressEl = document.getElementById('queue-progress');
+  if (progressEl) {
+    progressEl.textContent = `${ChorusState.currentQueueIndex + 1}/${ChorusState.practiceQueue.length}`;
+  }
+}
+
+function practiceQueueItem(index) {
+  if (index >= ChorusState.practiceQueue.length) {
+    showToast('Queue complete! 🎉', 'success');
+    exitQueueMode();
+    return;
+  }
+  
+  const item = ChorusState.practiceQueue[index];
+  ChorusState.currentQueueIndex = index;
+  updateQueueProgress();
+  
+  // If different video, show message
+  if (item.videoId !== getVideoId()) {
+    showToast('This item is from a different video', 'warning');
+    return;
+  }
+  
+  // Select and practice
+  ChorusState.selectedIndices.clear();
+  ChorusState.selectedIndices.add(item.subtitleIndex);
+  updateSelectionUI();
+  startPractice();
+}
+
+function nextQueueItem() {
+  practiceQueueItem(ChorusState.currentQueueIndex + 1);
+}
+
+function prevQueueItem() {
+  if (ChorusState.currentQueueIndex > 0) {
+    practiceQueueItem(ChorusState.currentQueueIndex - 1);
+  }
+}
+
+// ============================================================================
+// STUDIO MODE
+// ============================================================================
+
+function createStudioOverlay() {
+  if (document.getElementById('chorus-studio-overlay')) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'chorus-studio-overlay';
+  overlay.innerHTML = `
+    <div id="chorus-studio-modal">
+      <div class="studio-header">
+        <div class="studio-title-group">
+          <div class="studio-icon">🎙️</div>
+          <div>
+            <div class="studio-title">Practice Studio</div>
+            <div class="studio-subtitle" id="studio-time-range">--:-- - --:--</div>
+          </div>
+        </div>
+        <div class="studio-header-actions">
+          <button class="srs-btn" id="studio-add-srs">📚 Add to Cards</button>
+          <button class="studio-close-btn" id="studio-close">×</button>
+        </div>
+      </div>
+      <div class="studio-content" id="studio-content">
+        <div class="capture-loading">
+          <div class="capture-spinner"></div>
+          <div class="capture-title">Capturing Audio</div>
+          <div class="capture-subtitle">Playing segment and recording...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="countdown-overlay" id="countdown-overlay">
+      <div class="countdown-number" id="countdown-number">3</div>
+      <div class="countdown-label">Get Ready</div>
+      <div class="countdown-listen-label" id="countdown-listen-label"></div>
+    </div>
   `;
-  loader.style.display = 'flex';
+
+  document.body.appendChild(overlay);
+  document.getElementById('studio-close').addEventListener('click', closeStudio);
+  document.getElementById('studio-add-srs').addEventListener('click', createSRSCard);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeStudio();
+  });
 }
 
-function hideCapturingState() {
-  const loader = document.getElementById('chorus-loader');
-  if (loader) loader.style.display = 'none';
+function showStudio() {
+  createStudioOverlay();
+  const overlay = document.getElementById('chorus-studio-overlay');
+  requestAnimationFrame(() => overlay.classList.add('visible'));
+  ChorusState.isStudioOpen = true;
 }
 
-async function captureOriginalAudio(startTime, endTime) {
+function closeStudio() {
+  const overlay = document.getElementById('chorus-studio-overlay');
+  if (overlay) overlay.classList.remove('visible');
+  ChorusState.isStudioOpen = false;
+  
+  // Cleanup
+  if (ChorusState.originalAudioUrl) {
+    URL.revokeObjectURL(ChorusState.originalAudioUrl);
+    ChorusState.originalAudioUrl = null;
+  }
+  if (ChorusState.userAudioUrl) {
+    URL.revokeObjectURL(ChorusState.userAudioUrl);
+    ChorusState.userAudioUrl = null;
+  }
+  if (ChorusState.recordingStream) {
+    ChorusState.recordingStream.getTracks().forEach(t => t.stop());
+    ChorusState.recordingStream = null;
+  }
+}
+
+async function startPractice() {
+  if (ChorusState.selectedIndices.size === 0) return;
+
+  const indices = Array.from(ChorusState.selectedIndices).sort((a, b) => a - b);
+  const firstSub = ChorusState.subtitles[indices[0]];
+  const lastSub = ChorusState.subtitles[indices[indices.length - 1]];
+  
+  ChorusState.capturedStartTime = firstSub.startTime;
+  ChorusState.capturedEndTime = lastSub.endTime;
+  ChorusState.capturedSubtitleText = indices.map(i => ChorusState.subtitles[i].text).join(' ');
+
+  // Cleanup previous
+  if (ChorusState.originalAudioUrl) URL.revokeObjectURL(ChorusState.originalAudioUrl);
+  if (ChorusState.userAudioUrl) URL.revokeObjectURL(ChorusState.userAudioUrl);
+  ChorusState.userAudioBlob = null;
+  ChorusState.userAudioUrl = null;
+  ChorusState.userAudioBuffer = null;
+  ChorusState.lastScore = null;
+
+  showStudio();
+  document.getElementById('studio-time-range').textContent = 
+    `${formatTime(ChorusState.capturedStartTime)} - ${formatTime(ChorusState.capturedEndTime)}`;
+
+  const content = document.getElementById('studio-content');
+  content.innerHTML = `
+    <div class="capture-loading">
+      <div class="capture-spinner"></div>
+      <div class="capture-title">Capturing Audio</div>
+      <div class="capture-subtitle">Playing segment and recording...</div>
+    </div>
+  `;
+
+  try {
+    const blob = await captureAudioFromVideo(ChorusState.capturedStartTime, ChorusState.capturedEndTime);
+    ChorusState.originalAudioBlob = blob;
+    ChorusState.originalAudioUrl = URL.createObjectURL(blob);
+    
+    // Decode for analysis
+    const audioCtx = getAudioContext();
+    const arrayBuffer = await blob.arrayBuffer();
+    ChorusState.originalAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    
+    renderStudioContent();
+  } catch (err) {
+    console.error('Audio capture failed:', err);
+    showToast('Failed to capture audio', 'error');
+    closeStudio();
+  }
+}
+
+async function captureAudioFromVideo(startTime, endTime) {
   const video = document.querySelector('video');
   const duration = (endTime - startTime) * 1000;
 
-  // Seek to start
   video.currentTime = startTime;
-
-  // Wait for seek to complete
   await new Promise(resolve => {
-    const onSeek = () => {
-      video.removeEventListener('seeked', onSeek);
-      resolve();
-    };
+    const onSeek = () => { video.removeEventListener('seeked', onSeek); resolve(); };
     video.addEventListener('seeked', onSeek);
   });
 
-  // Capture stream
-  // NOTE: captureStream() might be vendor prefixed or require specific handling
   let stream;
-  if (video.captureStream) {
-    stream = video.captureStream();
-  } else if (video.mozCaptureStream) {
-    stream = video.mozCaptureStream();
-  } else {
-    throw new Error("captureStream not supported");
-  }
+  if (video.captureStream) stream = video.captureStream();
+  else if (video.mozCaptureStream) stream = video.mozCaptureStream();
+  else throw new Error('captureStream not supported');
 
   const mediaRecorder = new MediaRecorder(stream);
   const chunks = [];
 
   return new Promise((resolve, reject) => {
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
-
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(chunks, { type: 'video/webm' }); // Usually video/webm even if just audio
-      resolve(blob);
-    };
-
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.onstop = () => resolve(new Blob(chunks, { type: 'audio/webm' }));
+    mediaRecorder.onerror = reject;
     mediaRecorder.start();
     video.play();
-
-    // Stop after duration
-    setTimeout(() => {
-      mediaRecorder.stop();
-      video.pause();
-    }, duration + 200); // Add small buffer
+    setTimeout(() => { mediaRecorder.stop(); video.pause(); }, duration + 200);
   });
 }
 
-/* ------------------ STUDIO MODE LOGIC -----------------------*/
-
-let studioState = {
-  originalBlob: null,
-  originalUrl: null,
-  userBlob: null,
-  userUrl: null,
-  isPlaying: false
-};
-
-/* ------------------ SPECTROGRAM VISUALIZATION -----------------------*/
-
-// Simple FFT implementation for Spectrogram
-// Note: For production, a WebAssembly FFT or optimized library is better.
-// This is a basic JS implementation for demonstration.
-
-function getSpectrogramData(audioBuffer, fftSize = 2048) {
-  const channelData = audioBuffer.getChannelData(0);
-  const sampleRate = audioBuffer.sampleRate;
-  const stepSize = fftSize / 2; // Overlap
-  const iterations = Math.floor((channelData.length - fftSize) / stepSize);
-  const spectrogram = [];
-
-  // Pre-calculate Hamming window
-  const window = new Float32Array(fftSize);
-  for (let i = 0; i < fftSize; i++) {
-    window[i] = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (fftSize - 1));
-  }
-
-  for (let i = 0; i < iterations; i++) {
-    const offset = i * stepSize;
-    const buffer = new Float32Array(fftSize);
-
-    // Apply window function
-    for (let j = 0; j < fftSize; j++) {
-      buffer[j] = channelData[offset + j] * window[j];
-    }
-
-    // Perform FFT (Magnitude only)
-    // Since we don't have a complex FFT lib, we'll use a simplified DFT for key frequencies
-    // OR better: Use OfflineAudioContext to get frequency data!
-    // Let's use OfflineAudioContext as it's native and fast.
-  }
-  return spectrogram;
-}
-
-// Optimized approach using OfflineAudioContext
-async function renderSpectrogram(blob, canvasId) {
-  const container = document.getElementById(canvasId);
-  if (!container) return;
-
-  container.innerHTML = '';
-  const canvas = document.createElement('canvas');
-  canvas.width = container.clientWidth;
-  canvas.height = container.clientHeight;
-  container.appendChild(canvas);
-  const ctx = canvas.getContext('2d');
-
-  const arrayBuffer = await blob.arrayBuffer();
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-  // We need to process the audio to get frequency data over time.
-  // We can't easily do this with OfflineContext for *visualization* of the whole file at once
-  // without playing it.
-  // Actually, we can just compute it manually.
-
-  drawSpectrogramOnCanvas(audioBuffer, ctx, canvas.width, canvas.height);
-}
-
-function drawSpectrogramOnCanvas(audioBuffer, ctx, width, height) {
-  const data = audioBuffer.getChannelData(0);
-  const fftSize = 512; // Lower resolution for performance
-  const step = Math.floor(data.length / width); // One column per pixel width
-
-  // Create a temporary Float32Array for the FFT
-  const real = new Float32Array(fftSize);
-  const imag = new Float32Array(fftSize);
-
-  // Draw column by column
-  for (let x = 0; x < width; x++) {
-    const offset = x * step;
-    if (offset + fftSize >= data.length) break;
-
-    // Fill buffer
-    for (let i = 0; i < fftSize; i++) {
-      real[i] = data[offset + i];
-      imag[i] = 0;
-    }
-
-    // Perform simple FFT (or just a few frequency bins for visual effect if full FFT is too slow)
-    // For a true spectrogram in JS without libs, we need a real FFT function.
-    // Let's implement a very basic visualization that LOOKS like a spectrogram
-    // by mapping amplitude to brightness and doing a rough frequency estimation (Zero Crossing Rate?)
-    // No, let's do a mini DFT for low/mid/high bands to fake it efficiently if we can't afford full FFT.
-
-    // Actually, let's try to implement a small, unoptimized FFT here. It's fine for short clips.
-    performFFT(real, imag, fftSize);
-
-    // Draw the column
-    for (let y = 0; y < height; y++) {
-      // Map y to frequency bin (0 to fftSize/2)
-      // Logarithmic scale is better for speech
-      const bin = Math.floor((height - y) / height * (fftSize / 2));
-      const magnitude = Math.sqrt(real[bin] * real[bin] + imag[bin] * imag[bin]);
-
-      // Color map (Black -> Blue -> Red -> Yellow -> White)
-      const intensity = Math.min(1, Math.log(1 + magnitude) * 5); // Boost contrast
-
-      if (intensity > 0.1) {
-        ctx.fillStyle = getHeatmapColor(intensity);
-        ctx.fillRect(x, y, 1, 1);
-      }
-    }
-  }
-}
-
-// Basic Cooley-Tukey FFT (In-place)
-function performFFT(re, im, n) {
-  if (n <= 1) return;
-
-  const h = n / 2;
-  const evenRe = new Float32Array(h);
-  const evenIm = new Float32Array(h);
-  const oddRe = new Float32Array(h);
-  const oddIm = new Float32Array(h);
-
-  for (let i = 0; i < h; i++) {
-    evenRe[i] = re[2 * i];
-    evenIm[i] = im[2 * i];
-    oddRe[i] = re[2 * i + 1];
-    oddIm[i] = im[2 * i + 1];
-  }
-
-  performFFT(evenRe, evenIm, h);
-  performFFT(oddRe, oddIm, h);
-
-  for (let k = 0; k < h; k++) {
-    const t = -2 * Math.PI * k / n;
-    const cosT = Math.cos(t);
-    const sinT = Math.sin(t);
-
-    const reT = cosT * oddRe[k] - sinT * oddIm[k];
-    const imT = cosT * oddIm[k] + sinT * oddRe[k];
-
-    re[k] = evenRe[k] + reT;
-    im[k] = evenIm[k] + imT;
-    re[k + h] = evenRe[k] - reT;
-    im[k + h] = evenIm[k] - imT;
-  }
-}
-
-function getHeatmapColor(value) {
-  // value 0 to 1
-  const h = (1 - value) * 240; // Blue (240) to Red (0)
-  return `hsl(${h}, 100%, 50%)`;
-}
-
-/* ------------------ WAVEFORM VISUALIZATION -----------------------*/
-
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-let animationFrameId;
-
-async function renderWaveform(blob, canvasId, color = '#4CAF50', audioDuration = 0) {
-  const container = document.getElementById(canvasId);
-  if (!container) return;
-
-  container.innerHTML = '';
-  const canvas = document.createElement('canvas');
-  canvas.width = container.clientWidth;
-  canvas.height = container.clientHeight;
-  container.appendChild(canvas);
-
-  const ctx = canvas.getContext('2d');
-
-  const arrayBuffer = await blob.arrayBuffer();
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-  // Store buffer for redrawing during animation
-  canvas.audioBuffer = audioBuffer;
-  canvas.waveformColor = color;
-
-  drawWaveformOnCanvas(audioBuffer, ctx, canvas.width, canvas.height, color, 0); // Initial draw at 0s
-}
-
-function drawWaveformOnCanvas(audioBuffer, ctx, width, height, color, currentTime) {
-  ctx.clearRect(0, 0, width, height);
-
-  // Background
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, width, height);
-
-  // Draw Axes
-  drawAxes(ctx, width, height, audioBuffer.duration);
-
-  const rawData = audioBuffer.getChannelData(0);
-  const samples = width; // One bar per pixel roughly
-  const blockSize = Math.floor(rawData.length / samples);
-  const filteredData = [];
-
-  for (let i = 0; i < samples; i++) {
-    let blockStart = blockSize * i;
-    let sum = 0;
-    for (let j = 0; j < blockSize; j++) {
-      sum = sum + Math.abs(rawData[blockStart + j]);
-    }
-    filteredData.push(sum / blockSize);
-  }
-
-  const multiplier = Math.pow(Math.max(...filteredData), -1);
-
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = color;
-  ctx.beginPath();
-
-  for (let i = 0; i < samples; i++) {
-    const v = filteredData[i] * multiplier;
-    const barHeight = v * (height - 20); // Leave space for axis labels
-    const x = i;
-
-    ctx.moveTo(x, (height - barHeight) / 2);
-    ctx.lineTo(x, (height + barHeight) / 2);
-  }
-  ctx.stroke();
-
-  // Draw Playback Cursor
-  if (currentTime >= 0) {
-    const x = (currentTime / audioBuffer.duration) * width;
-    ctx.strokeStyle = '#FF0000';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-  }
-}
-
-function drawAxes(ctx, width, height, duration) {
-  ctx.fillStyle = '#444';
-  ctx.font = '10px Arial';
-
-  // X-Axis (Time)
-  const timeSteps = 5; // Draw 5 timestamps
-  for (let i = 0; i <= timeSteps; i++) {
-    const x = (width / timeSteps) * i;
-    const time = (duration / timeSteps) * i;
-    ctx.fillText(time.toFixed(1) + 's', x + 2, height - 2);
-
-    // Grid line
-    ctx.strokeStyle = '#222';
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-  }
-
-  // Y-Axis (Amplitude) - Just 0 line
-  ctx.strokeStyle = '#333';
-  ctx.beginPath();
-  ctx.moveTo(0, height / 2);
-  ctx.lineTo(width, height / 2);
-  ctx.stroke();
-}
-
-function startPlaybackAnimation(audioElement, canvasId) {
-  const container = document.getElementById(canvasId);
-  if (!container) return;
-  const canvas = container.querySelector('canvas');
-  if (!canvas || !canvas.audioBuffer) return;
-
-  const ctx = canvas.getContext('2d');
-
-  function loop() {
-    if (audioElement.paused || audioElement.ended) {
-      // Draw final state (or reset)
-      drawWaveformOnCanvas(canvas.audioBuffer, ctx, canvas.width, canvas.height, canvas.waveformColor, audioElement.currentTime);
-      return;
-    }
-
-    drawWaveformOnCanvas(canvas.audioBuffer, ctx, canvas.width, canvas.height, canvas.waveformColor, audioElement.currentTime);
-    animationFrameId = requestAnimationFrame(loop);
-  }
-
-  loop();
-}
-
-/* ------------------ STUDIO WINDOW CREATION -----------------------*/
-
-let studioWindow = null;
-let isStudioDragging = false;
-let studioDragOffset = { x: 0, y: 0 };
-
-function createStudioWindow() {
-  if (studioWindow) return studioWindow;
-
-  const window = document.createElement('div');
-  window.id = 'chorus-studio-window';
-  window.innerHTML = `
-    <div class="studio-window-header" id="studio-window-header">
-      <span>Studio Mode</span>
-      <button class="studio-close-btn" id="studio-close-btn">×</button>
-    </div>
-    <div class="studio-window-content" id="studio-window-content">
-      <!-- Content will be inserted here -->
-    </div>
-  `;
-
-  document.body.appendChild(window);
-  studioWindow = window;
-
-  // Make draggable
-  const header = document.getElementById('studio-window-header');
-  header.addEventListener('mousedown', startStudioDrag);
-  document.addEventListener('mousemove', handleStudioDrag);
-  document.addEventListener('mouseup', stopStudioDrag);
-
-  return window;
-}
-
-function startStudioDrag(e) {
-  if (e.target.classList.contains('studio-close-btn')) return;
-
-  isStudioDragging = true;
-  const rect = studioWindow.getBoundingClientRect();
-  studioDragOffset.x = e.clientX - rect.left;
-  studioDragOffset.y = e.clientY - rect.top;
-
-  // Remove transform to allow absolute positioning
-  studioWindow.style.transform = 'none';
-  studioWindow.style.left = rect.left + 'px';
-  studioWindow.style.top = rect.top + 'px';
-
-  e.preventDefault();
-}
-
-function handleStudioDrag(e) {
-  if (!isStudioDragging) return;
-
-  const newLeft = e.clientX - studioDragOffset.x;
-  const newTop = e.clientY - studioDragOffset.y;
-
-  studioWindow.style.left = `${Math.max(0, newLeft)}px`;
-  studioWindow.style.top = `${Math.max(0, newTop)}px`;
-}
-
-function stopStudioDrag() {
-  isStudioDragging = false;
-}
-
-function removeStudioWindow() {
-  if (studioWindow) {
-    studioWindow.remove();
-    studioWindow = null;
-  }
-}
-
-/* ------------------ STUDIO MODE LOGIC -----------------------*/
-
-let currentViewMode = 'waveform'; // 'waveform' or 'spectrogram'
-
-function launchStudioMode(originalBlob, startTime, endTime) {
-  hideCapturingState();
-  studioState.originalBlob = originalBlob;
-  studioState.originalUrl = URL.createObjectURL(originalBlob);
-
-  // Create floating window
-  const window = createStudioWindow();
-  const content = document.getElementById('studio-window-content');
-
+function renderStudioContent() {
+  const content = document.getElementById('studio-content');
+  
   content.innerHTML = `
-    <div class="chorus-studio-container">
-      <div class="studio-header">
-        <button id="exit-studio" class="chorus-btn small">← Back</button>
-        <span>Practice Audio</span>
-        <div class="view-toggle">
-          <button id="view-waveform" class="toggle-btn active" title="Waveform">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2,9 L2,15 L5,15 L5,9 L2,9 Z M7,5 L7,19 L10,19 L10,5 L7,5 Z M12,2 L12,22 L15,22 L15,2 L12,2 Z M17,7 L17,17 L20,17 L20,7 L17,7 Z"/></svg>
-          </button>
-          <button id="view-spectrogram" class="toggle-btn" title="Spectrogram">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2,4 L22,4 L22,20 L2,20 L2,4 Z M4,6 L4,18 L20,18 L20,6 L4,6 Z M6,8 L6,16 L8,16 L8,8 L6,8 Z M10,10 L10,16 L12,16 L12,10 L10,10 Z M14,8 L14,16 L16,16 L16,8 L14,8 Z"/></svg>
-          </button>
-        </div>
-      </div>
-      
-      <div class="studio-tracks">
-        <!-- Track 1: Original -->
-        <div class="track-container original">
-          <div class="track-label">Target Audio</div>
-          <div class="waveform-display" id="waveform-original">
-             <!-- Canvas will be inserted here -->
-          </div>
-          <div class="track-controls">
-             <button id="play-original" class="icon-btn">▶</button>
-          </div>
-        </div>
+    <!-- Subtitle Display -->
+    <div class="studio-subtitle-display">
+      <div class="studio-subtitle-text">${ChorusState.capturedSubtitleText}</div>
+      <div class="studio-subtitle-time">${formatTime(ChorusState.capturedStartTime)} - ${formatTime(ChorusState.capturedEndTime)}</div>
+    </div>
 
-        <!-- Track 2: User -->
-        <div class="track-container user">
-          <div class="track-label">Your Recording</div>
-          <div class="waveform-display" id="waveform-user">
-             <div class="empty-state">No recording yet</div>
+    <!-- Score Display -->
+    <div class="score-display" id="score-display">
+      <div class="score-circle" style="--score: 0">
+        <span class="score-value" id="score-value">--</span>
+      </div>
+      <div class="score-details">
+        <div class="score-label">Similarity Score</div>
+        <div class="score-feedback" id="score-feedback">Record to get your score!</div>
+      </div>
+    </div>
+
+    <!-- Original Track -->
+    <div class="audio-track">
+      <div class="track-header">
+        <div class="track-label original">
+          <span class="track-dot original"></span>
+          Target Audio
+        </div>
+        <div class="track-controls">
+          <div class="viz-tabs" data-track="original">
+            <button class="viz-tab active" data-viz="waveform">Wave</button>
+            <button class="viz-tab" data-viz="spectrogram">Spec</button>
+            <button class="viz-tab" data-viz="pitch">Pitch</button>
+            <button class="viz-tab" data-viz="overlay">Compare</button>
           </div>
-          <div class="track-controls">
-             <button id="play-user" class="icon-btn" disabled>▶</button>
+          <button class="track-btn" id="download-original" title="Download">⬇</button>
+          <button class="track-btn" id="play-original" title="Play">▶</button>
+        </div>
+      </div>
+      <div class="visualization-container" id="viz-original">
+        <canvas id="canvas-original"></canvas>
+        <div class="playhead" id="playhead-original" style="left: 0"></div>
+        <div class="ab-loop-region" id="ab-region"></div>
+        <div class="ab-handle start" id="ab-handle-start"></div>
+        <div class="ab-handle end" id="ab-handle-end"></div>
+      </div>
+    </div>
+
+    <!-- User Track -->
+    <div class="audio-track">
+      <div class="track-header">
+        <div class="track-label user">
+          <span class="track-dot user"></span>
+          Your Recording
+        </div>
+        <div class="track-controls">
+          <div class="viz-tabs" data-track="user">
+            <button class="viz-tab active" data-viz="waveform">Wave</button>
+            <button class="viz-tab" data-viz="spectrogram">Spec</button>
+            <button class="viz-tab" data-viz="pitch">Pitch</button>
           </div>
+          <button class="track-btn" id="download-user" title="Download" disabled>⬇</button>
+          <button class="track-btn" id="play-user" title="Play" disabled>▶</button>
+        </div>
+      </div>
+      <div class="visualization-container" id="viz-user">
+        <div class="visualization-placeholder">Record to see visualization</div>
+        <canvas id="canvas-user" style="display:none"></canvas>
+        <div class="playhead" id="playhead-user" style="left: 0; display: none"></div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="playback-controls">
+      <div class="control-group">
+        <span class="control-label">Speed</span>
+        <div class="control-group-row">
+          <button class="speed-btn" data-speed="0.5">0.5×</button>
+          <button class="speed-btn" data-speed="0.75">0.75×</button>
+          <button class="speed-btn active" data-speed="1">1×</button>
+          <button class="speed-btn" data-speed="1.25">1.25×</button>
         </div>
       </div>
       
-      <div class="studio-main-controls">
-        <button id="studio-record-btn" class="record-btn-large">
-          <div class="inner-circle"></div>
+      <div class="control-group">
+        <span class="control-label">Listen</span>
+        <div class="control-group-row">
+          <button class="listen-btn active" data-listen="1">1×</button>
+          <button class="listen-btn" data-listen="2">2×</button>
+          <button class="listen-btn" data-listen="3">3×</button>
+        </div>
+      </div>
+      
+      <div class="record-btn-container">
+        <button class="record-btn" id="studio-record-btn">
+          <div class="record-btn-inner"></div>
         </button>
-        <div class="control-label">REC</div>
+        <span class="record-label" id="record-label">Record</span>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Compare</span>
+        <button class="compare-btn" id="compare-btn" disabled>🔄 A/B</button>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Loop</span>
+        <div class="control-group-row">
+          <button class="loop-btn" id="loop-btn" title="Loop">🔁</button>
+          <button class="ab-loop-btn" id="ab-loop-btn" title="A-B Loop">AB</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Queue Navigation -->
+    <div class="queue-mode-header ${ChorusState.isQueueMode ? 'active' : ''}" id="studio-queue-nav">
+      <div class="queue-mode-info">
+        <span class="queue-mode-progress" id="studio-queue-progress">${ChorusState.currentQueueIndex + 1}/${ChorusState.practiceQueue.length}</span>
+      </div>
+      <div class="queue-mode-nav">
+        <button class="queue-nav-btn" id="queue-prev" ${ChorusState.currentQueueIndex === 0 ? 'disabled' : ''}>← Prev</button>
+        <button class="queue-nav-btn" id="queue-next">Next →</button>
       </div>
     </div>
   `;
 
-  // Show window
-  window.style.display = 'block';
+  setupStudioEvents();
+  renderWaveform(ChorusState.originalAudioBlob, 'canvas-original', '#4ade80');
+}
 
-  // Render View
-  updateTrackViews();
-
-  // Bind Events
-  document.getElementById('exit-studio').addEventListener('click', exitStudioMode);
-  document.getElementById('studio-close-btn').addEventListener('click', exitStudioMode);
-  document.getElementById('view-waveform').addEventListener('click', () => switchView('waveform'));
-  document.getElementById('view-spectrogram').addEventListener('click', () => switchView('spectrogram'));
-
-  const originalAudio = new Audio(studioState.originalUrl);
-  document.getElementById('play-original').addEventListener('click', () => {
-    originalAudio.currentTime = 0;
-    originalAudio.play();
-    startPlaybackAnimation(originalAudio, 'waveform-original');
+function setupStudioEvents() {
+  // Original audio playback
+  const originalAudio = new Audio(ChorusState.originalAudioUrl);
+  const playOriginalBtn = document.getElementById('play-original');
+  const vizOriginal = document.getElementById('viz-original');
+  const playheadOriginal = document.getElementById('playhead-original');
+  
+  let animFrameOriginal;
+  
+  function updatePlayheadOriginal() {
+    if (originalAudio.paused || originalAudio.ended) return;
+    const progress = originalAudio.currentTime / originalAudio.duration;
+    playheadOriginal.style.left = `${progress * vizOriginal.clientWidth}px`;
+    animFrameOriginal = requestAnimationFrame(updatePlayheadOriginal);
+  }
+  
+  playOriginalBtn.addEventListener('click', () => {
+    if (originalAudio.paused) {
+      originalAudio.playbackRate = ChorusState.playbackSpeed;
+      
+      // A-B Loop handling
+      if (ChorusState.abLoopEnabled) {
+        originalAudio.currentTime = ChorusState.abLoopStart * originalAudio.duration;
+      }
+      
+      originalAudio.play();
+      playOriginalBtn.classList.add('playing');
+      playOriginalBtn.textContent = '⏸';
+      updatePlayheadOriginal();
+    } else {
+      originalAudio.pause();
+      playOriginalBtn.classList.remove('playing');
+      playOriginalBtn.textContent = '▶';
+      cancelAnimationFrame(animFrameOriginal);
+    }
   });
 
-  const recordBtn = document.getElementById('studio-record-btn');
-  recordBtn.addEventListener('click', () => toggleStudioRecording(recordBtn));
-}
-
-function switchView(mode) {
-  if (currentViewMode === mode) return;
-  currentViewMode = mode;
-
-  document.getElementById('view-waveform').classList.toggle('active', mode === 'waveform');
-  document.getElementById('view-spectrogram').classList.toggle('active', mode === 'spectrogram');
-
-  updateTrackViews();
-}
-
-function updateTrackViews() {
-  if (currentViewMode === 'waveform') {
-    renderWaveform(studioState.originalBlob, 'waveform-original', '#4CAF50');
-    if (studioState.userBlob) {
-      renderWaveform(studioState.userBlob, 'waveform-user', '#2196F3');
-    }
-  } else {
-    renderSpectrogram(studioState.originalBlob, 'waveform-original');
-    if (studioState.userBlob) {
-      renderSpectrogram(studioState.userBlob, 'waveform-user');
-    }
-  }
-}
-
-function exitStudioMode() {
-  removeStudioWindow();
-}
-
-async function toggleStudioRecording(btn) {
-  if (btn.classList.contains('recording')) {
-    // STOP
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
-    }
-    btn.classList.remove('recording');
-  } else {
-    // START
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
-
-      mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
-
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunks, { type: 'audio/webm' });
-        studioState.userBlob = blob;
-        studioState.userUrl = URL.createObjectURL(blob);
-
-        updateUserTrackUI();
-      };
-
-      mediaRecorder.start();
-      btn.classList.add('recording');
-
-      // Auto-play original audio for shadowing?
-      const originalAudio = new Audio(studioState.originalUrl);
-      originalAudio.play();
-
-    } catch (err) {
-      console.error(err);
-      alert("Microphone access denied");
-    }
-  }
-}
-
-function updateUserTrackUI() {
-  const container = document.getElementById('waveform-user');
-  container.innerHTML = '<div class="waveform-line user-recorded"></div>'; // Placeholder visual
-
-  const playBtn = document.getElementById('play-user');
-  playBtn.disabled = false;
-
-  // Re-bind play button
-  const userAudio = new Audio(studioState.userUrl);
-  playBtn.onclick = () => {
-    userAudio.currentTime = 0;
-    userAudio.play();
-  };
-}
-
-
-function toggleChorusMode(active) {
-  if (active) {
-    // Show overlay
-    if (!subtitleOverlay) {
-      createSubtitleOverlay();
-    }
-    subtitleOverlay.style.display = 'flex';
-    positionOverlay();
-
-    // Add resize listener
-    window.addEventListener('resize', positionOverlay);
-
-    // Initial position check
-    setTimeout(positionOverlay, 500);
-    startMonitoringChanges(); // Start monitoring for monitor changes
-
-  } else {
-    // Hide overlay
-    if (subtitleOverlay) {
-      subtitleOverlay.style.display = 'none';
-    }
-    resetVideoLayout(); // Unconditional reset
-    window.removeEventListener('resize', positionOverlay);
-    stopMonitoringChanges(); // Stop monitoring when hidden
-  }
-}
-
-function togglePopout() {
-  isPopout = !isPopout;
-  const popoutBtn = document.getElementById('chorus-popout-btn');
-
-  if (isPopout) {
-    // Switch to popout mode
-    subtitleOverlay.classList.add('popout');
-
-    // Move to body and position freely (no video layout changes needed)
-    document.body.appendChild(subtitleOverlay);
-    subtitleOverlay.style.position = 'fixed';
-    subtitleOverlay.style.zIndex = '10001';
-    subtitleOverlay.style.width = '400px';
-    subtitleOverlay.style.height = '500px';
-    subtitleOverlay.style.left = '50px';
-    subtitleOverlay.style.top = '50px';
-
-    popoutBtn.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M5,17 L5,10 L7,10 L7,15 L12,15 L12,17 L5,17 Z M12,12 L7,7 L9,7 L9,3 L15,3 L15,7 L17,7 L12,12 Z"/>
-      </svg>
-    `;
-    popoutBtn.title = "Dock to video";
-  } else {
-    // Switch back to docked mode
-    subtitleOverlay.classList.remove('popout');
-    subtitleOverlay.style.zIndex = '2000';
-    positionOverlay(); // Reposition using Migaku-style positioning
-    popoutBtn.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M19,7 L19,14 L17,14 L17,9 L12,9 L12,7 L19,7 Z M12,12 L17,17 L15,17 L15,21 L9,21 L9,17 L7,17 L12,12 Z"/>
-      </svg>
-    `;
-    popoutBtn.title = "Pop out";
-  }
-}
-
-
-
-function startDrag(e) {
-  if (!isPopout) return; // Only allow dragging in popout mode
-
-  isDragging = true;
-  const rect = subtitleOverlay.getBoundingClientRect();
-  dragOffset.x = e.clientX - rect.left;
-  dragOffset.y = e.clientY - rect.top;
-
-  subtitleOverlay.style.cursor = 'grabbing';
-  e.preventDefault();
-}
-
-function startResize(e) {
-  if (!isPopout) return; // Only allow resizing in popout mode
-
-  isResizing = true;
-  e.preventDefault();
-  e.stopPropagation();
-}
-
-function handleMouseMove(e) {
-  if (isDragging && isPopout) {
-    const newLeft = e.clientX - dragOffset.x;
-    const newTop = e.clientY - dragOffset.y;
-
-    subtitleOverlay.style.left = `${Math.max(0, newLeft)}px`;
-    subtitleOverlay.style.top = `${Math.max(0, newTop)}px`;
-  }
-
-  if (isResizing && isPopout) {
-    const rect = subtitleOverlay.getBoundingClientRect();
-    const newWidth = Math.max(300, e.clientX - rect.left);
-    const newHeight = Math.max(400, e.clientY - rect.top);
-
-    subtitleOverlay.style.width = `${newWidth}px`;
-    subtitleOverlay.style.height = `${newHeight}px`;
-  }
-}
-
-function stopDragResize() {
-  if (isDragging) {
-    isDragging = false;
-    subtitleOverlay.style.cursor = '';
-  }
-  if (isResizing) {
-    isResizing = false;
-  }
-}
-
-
-
-// Enhanced window resize and monitor change handling
-let resizeTimeout;
-let lastScreenX = window.screenX;
-let lastScreenY = window.screenY;
-let lastViewportWidth = window.innerWidth;
-let lastViewportHeight = window.innerHeight;
-
-function handlePositionUpdate() {
-  if (!isPopout && subtitleOverlay && subtitleOverlay.style.display !== 'none') {
-    positionOverlay();
-  }
-}
-
-function debouncedPositionUpdate() {
-  clearTimeout(resizeTimeout);
-  resizeTimeout = setTimeout(handlePositionUpdate, 100);
-}
-
-// Handle window resize
-window.addEventListener('resize', () => {
-  const currentViewportWidth = window.innerWidth;
-  const currentViewportHeight = window.innerHeight;
-
-  // Only reposition if viewport actually changed significantly
-  if (Math.abs(currentViewportWidth - lastViewportWidth) > 50 ||
-    Math.abs(currentViewportHeight - lastViewportHeight) > 50) {
-    lastViewportWidth = currentViewportWidth;
-    lastViewportHeight = currentViewportHeight;
-    debouncedPositionUpdate();
-  }
-});
-
-// Handle monitor changes (window being dragged between monitors)
-function detectMonitorChange() {
-  const currentScreenX = window.screenX;
-  const currentScreenY = window.screenY;
-
-  // Detect significant position changes (likely monitor change)
-  if (Math.abs(currentScreenX - lastScreenX) > 100 ||
-    Math.abs(currentScreenY - lastScreenY) > 100) {
-    lastScreenX = currentScreenX;
-    lastScreenY = currentScreenY;
-
-    // Force reposition after a short delay to let the window settle
-    setTimeout(handlePositionUpdate, 200);
-  }
-
-  lastScreenX = currentScreenX;
-  lastScreenY = currentScreenY;
-}
-
-// Check for monitor changes periodically when overlay is active
-let monitorCheckInterval;
-
-function startMonitoringChanges() {
-  if (monitorCheckInterval) return;
-  monitorCheckInterval = setInterval(detectMonitorChange, 500);
-}
-
-function stopMonitoringChanges() {
-  if (monitorCheckInterval) {
-    clearInterval(monitorCheckInterval);
-    monitorCheckInterval = null;
-  }
-}
-/* ------------------ SUBTITLE UI LOGIC END -----------------------*/
-/* ------------------ ORIGINAL SUBTITLE FUNCTIONS -----------------------*/
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === "startChorus") {
-    toggleChorusMode(true);
-    init();
-  }
-  if (message.action === "stopChorus") {
-    toggleChorusMode(false);
-  }
-  if (message.action === "subtitlesFetched") {
-    const subtitleText = message.data;
-    console.log("📥 Subtitles received in content script:");
-    console.log(subtitleText);
-
-    // Optionally parse and display them
-    // Example: const xml = new DOMParser().parseFromString(subtitleText, "text/xml");
-    displaySubtitles(subtitleText);
-  }
-  sendResponse({ status: "ok" })
-});
-
-
-function checkCached() {
-  return new Promise((resolve) => {
-    const videoId = new URL(window.location.href).searchParams.get("v");
-    chrome.runtime.sendMessage({ action: "checkCache", videoId }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.warn("Background unreachable:", chrome.runtime.lastError.message);
-        resolve(false);
-        return;
+  originalAudio.addEventListener('timeupdate', () => {
+    // A-B Loop check
+    if (ChorusState.abLoopEnabled && ChorusState.isLooping) {
+      const endPos = ChorusState.abLoopEnd * originalAudio.duration;
+      if (originalAudio.currentTime >= endPos) {
+        originalAudio.currentTime = ChorusState.abLoopStart * originalAudio.duration;
       }
+    }
+  });
 
-      if (response && response.cached) {
-        console.log("💵 Subtitles from cache:", response.data);
-        // Do something with cached subtitles here if needed
-        displaySubtitles(response.data);
-        resolve(true);
-      } else {
-        console.log("❌ No cache, clicking subtitle button...");
-        resolve(false);
+  originalAudio.addEventListener('ended', () => {
+    playOriginalBtn.classList.remove('playing');
+    playOriginalBtn.textContent = '▶';
+    cancelAnimationFrame(animFrameOriginal);
+    playheadOriginal.style.left = '0';
+    
+    if (ChorusState.isLooping) {
+      originalAudio.currentTime = ChorusState.abLoopEnabled ? ChorusState.abLoopStart * originalAudio.duration : 0;
+      originalAudio.play();
+      playOriginalBtn.classList.add('playing');
+      playOriginalBtn.textContent = '⏸';
+      updatePlayheadOriginal();
+    }
+  });
+
+  // Click on waveform to seek
+  vizOriginal.addEventListener('click', (e) => {
+    if (e.target.classList.contains('ab-handle')) return;
+    const rect = vizOriginal.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const progress = x / rect.width;
+    originalAudio.currentTime = progress * originalAudio.duration;
+    playheadOriginal.style.left = `${x}px`;
+  });
+
+  // Speed buttons
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      ChorusState.playbackSpeed = parseFloat(btn.dataset.speed);
+      originalAudio.playbackRate = ChorusState.playbackSpeed;
+    });
+  });
+
+  // Listen count buttons
+  document.querySelectorAll('.listen-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.listen-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      ChorusState.listenCount = parseInt(btn.dataset.listen);
+    });
+  });
+
+  // Loop button
+  document.getElementById('loop-btn').addEventListener('click', (e) => {
+    ChorusState.isLooping = !ChorusState.isLooping;
+    e.currentTarget.classList.toggle('active', ChorusState.isLooping);
+  });
+
+  // A-B Loop button
+  document.getElementById('ab-loop-btn').addEventListener('click', (e) => {
+    ChorusState.abLoopEnabled = !ChorusState.abLoopEnabled;
+    e.currentTarget.classList.toggle('active', ChorusState.abLoopEnabled);
+    
+    const region = document.getElementById('ab-region');
+    const handleStart = document.getElementById('ab-handle-start');
+    const handleEnd = document.getElementById('ab-handle-end');
+    
+    if (ChorusState.abLoopEnabled) {
+      region.classList.add('active');
+      handleStart.classList.add('active');
+      handleEnd.classList.add('active');
+      updateABLoopRegion();
+    } else {
+      region.classList.remove('active');
+      handleStart.classList.remove('active');
+      handleEnd.classList.remove('active');
+    }
+  });
+
+  // A-B Loop handles
+  setupABLoopHandles(vizOriginal);
+
+  // Record button
+  document.getElementById('studio-record-btn').addEventListener('click', toggleRecording);
+
+  // Download buttons
+  document.getElementById('download-original').addEventListener('click', () => {
+    downloadAudio(ChorusState.originalAudioBlob, 'target-audio');
+  });
+  document.getElementById('download-user').addEventListener('click', () => {
+    if (ChorusState.userAudioBlob) downloadAudio(ChorusState.userAudioBlob, 'my-recording');
+  });
+
+  // Compare button
+  document.getElementById('compare-btn').addEventListener('click', playComparison);
+
+  // Visualization tabs
+  document.querySelectorAll('.viz-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const track = tab.closest('.viz-tabs').dataset.track;
+      const vizType = tab.dataset.viz;
+      
+      tab.parentElement.querySelectorAll('.viz-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      
+      const blob = track === 'original' ? ChorusState.originalAudioBlob : ChorusState.userAudioBlob;
+      const canvasId = track === 'original' ? 'canvas-original' : 'canvas-user';
+      const color = track === 'original' ? '#4ade80' : '#818cf8';
+      
+      if (blob) {
+        if (vizType === 'waveform') renderWaveform(blob, canvasId, color);
+        else if (vizType === 'spectrogram') renderSpectrogram(blob, canvasId);
+        else if (vizType === 'pitch') renderPitchContour(blob, canvasId, color);
+        else if (vizType === 'overlay') renderPitchOverlay();
       }
     });
   });
+
+  // Queue navigation
+  if (ChorusState.isQueueMode) {
+    document.getElementById('queue-prev')?.addEventListener('click', prevQueueItem);
+    document.getElementById('queue-next')?.addEventListener('click', nextQueueItem);
+  }
+
+  // Scrubbing (slow-mo)
+  setupScrubbing(vizOriginal, originalAudio);
 }
 
+function setupABLoopHandles(container) {
+  const handleStart = document.getElementById('ab-handle-start');
+  const handleEnd = document.getElementById('ab-handle-end');
+  
+  let isDragging = null;
+  
+  const onMouseDown = (handle, type) => (e) => {
+    if (!ChorusState.abLoopEnabled) return;
+    isDragging = type;
+    e.preventDefault();
+  };
+  
+  handleStart.addEventListener('mousedown', onMouseDown(handleStart, 'start'));
+  handleEnd.addEventListener('mousedown', onMouseDown(handleEnd, 'end'));
+  
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    
+    const rect = container.getBoundingClientRect();
+    let progress = (e.clientX - rect.left) / rect.width;
+    progress = Math.max(0, Math.min(1, progress));
+    
+    if (isDragging === 'start') {
+      ChorusState.abLoopStart = Math.min(progress, ChorusState.abLoopEnd - 0.05);
+    } else {
+      ChorusState.abLoopEnd = Math.max(progress, ChorusState.abLoopStart + 0.05);
+    }
+    
+    updateABLoopRegion();
+  });
+  
+  document.addEventListener('mouseup', () => { isDragging = null; });
+}
 
+function updateABLoopRegion() {
+  const container = document.getElementById('viz-original');
+  const region = document.getElementById('ab-region');
+  const handleStart = document.getElementById('ab-handle-start');
+  const handleEnd = document.getElementById('ab-handle-end');
+  
+  if (!container || !region) return;
+  
+  const width = container.clientWidth;
+  const left = ChorusState.abLoopStart * width;
+  const right = ChorusState.abLoopEnd * width;
+  
+  region.style.left = `${left}px`;
+  region.style.width = `${right - left}px`;
+  handleStart.style.left = `${left}px`;
+  handleEnd.style.left = `${right}px`;
+}
 
+function setupScrubbing(container, audio) {
+  let isScrubbing = false;
+  
+  container.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (e.target.classList.contains('ab-handle')) return;
+    isScrubbing = true;
+  });
+  
+  container.addEventListener('mousemove', (e) => {
+    if (!isScrubbing || !e.buttons) return;
+    
+    const rect = container.getBoundingClientRect();
+    const progress = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    
+    // Update playhead visually
+    const playhead = container.querySelector('.playhead');
+    if (playhead) playhead.style.left = `${progress * rect.width}px`;
+    
+    // Play small chunk at slow speed
+    audio.currentTime = progress * audio.duration;
+    audio.playbackRate = 0.5;
+    
+    if (audio.paused) {
+      audio.play();
+      setTimeout(() => audio.pause(), 100);
+    }
+  });
+  
+  document.addEventListener('mouseup', () => {
+    if (isScrubbing) {
+      isScrubbing = false;
+      audio.playbackRate = ChorusState.playbackSpeed;
+    }
+  });
+}
 
+// ============================================================================
+// RECORDING
+// ============================================================================
 
-// Monitor SPA URL changes on YouTube
-new MutationObserver(() => {
-  const currentUrl = location.href;
-  if (currentUrl !== lastUrl) {
-    lastUrl = currentUrl;
-    console.log('🔄 URL changed:', currentUrl);
-    handleVideoChange(currentUrl);
+async function toggleRecording() {
+  const btn = document.getElementById('studio-record-btn');
+  const label = document.getElementById('record-label');
+  
+  if (ChorusState.isRecording) {
+    // Stop
+    if (ChorusState.mediaRecorder?.state === 'recording') {
+      ChorusState.mediaRecorder.stop();
+    }
+    btn.classList.remove('recording');
+    label.textContent = 'Record';
+    ChorusState.isRecording = false;
+  } else {
+    // Start
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      ChorusState.recordingStream = stream;
+      
+      await showCountdown();
+      
+      ChorusState.mediaRecorder = new MediaRecorder(stream);
+      ChorusState.audioChunks = [];
+
+      ChorusState.mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) ChorusState.audioChunks.push(e.data);
+      };
+
+      ChorusState.mediaRecorder.onstop = async () => {
+        const blob = new Blob(ChorusState.audioChunks, { type: 'audio/webm' });
+        ChorusState.userAudioBlob = blob;
+        ChorusState.userAudioUrl = URL.createObjectURL(blob);
+        
+        // Decode for analysis
+        const audioCtx = getAudioContext();
+        const arrayBuffer = await blob.arrayBuffer();
+        ChorusState.userAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        
+        onUserRecordingComplete();
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      // Setup real-time visualization
+      setupRealtimeWaveform(stream);
+
+      ChorusState.mediaRecorder.start();
+      btn.classList.add('recording');
+      label.textContent = 'Stop';
+      ChorusState.isRecording = true;
+
+      await playOriginalMultipleTimes(ChorusState.listenCount);
+      
+      if (ChorusState.isRecording) {
+        ChorusState.mediaRecorder.stop();
+        btn.classList.remove('recording');
+        label.textContent = 'Record';
+        ChorusState.isRecording = false;
+      }
+
+    } catch (err) {
+      console.error('Recording error:', err);
+      showToast('Microphone access denied', 'error');
+      hideCountdown();
+    }
   }
-}).observe(document, { childList: true, subtree: true });
+}
 
-// ⏳ Utility: Wait for an element to appear
-async function waitForElement(selector, timeout = 5000) {
+function setupRealtimeWaveform(stream) {
+  const audioCtx = getAudioContext();
+  const source = audioCtx.createMediaStreamSource(stream);
+  const analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 2048;
+  source.connect(analyser);
+  
+  ChorusState.recordingAnalyser = analyser;
+  
+  const vizUser = document.getElementById('viz-user');
+  const placeholder = vizUser.querySelector('.visualization-placeholder');
+  const canvas = document.getElementById('canvas-user');
+  
+  if (placeholder) placeholder.style.display = 'none';
+  canvas.style.display = 'block';
+  
+  const ctx = canvas.getContext('2d');
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+  
+  canvas.width = vizUser.clientWidth;
+  canvas.height = vizUser.clientHeight;
+  
+  function draw() {
+    if (!ChorusState.isRecording) return;
+    
+    requestAnimationFrame(draw);
+    analyser.getByteTimeDomainData(dataArray);
+    
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#818cf8';
+    ctx.beginPath();
+    
+    const sliceWidth = canvas.width / bufferLength;
+    let x = 0;
+    
+    for (let i = 0; i < bufferLength; i++) {
+      const v = dataArray[i] / 128.0;
+      const y = (v * canvas.height) / 2;
+      
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+      
+      x += sliceWidth;
+    }
+    
+    ctx.lineTo(canvas.width, canvas.height / 2);
+    ctx.stroke();
+  }
+  
+  draw();
+}
+
+function showCountdown() {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('countdown-overlay');
+    const numberEl = document.getElementById('countdown-number');
+    const listenLabel = document.getElementById('countdown-listen-label');
+    
+    listenLabel.textContent = `Will play ${ChorusState.listenCount}× while recording`;
+    overlay.classList.add('visible');
+    
+    let count = 3;
+    numberEl.textContent = count;
+    numberEl.style.color = '#fbbf24';
+    numberEl.style.animation = 'none';
+    numberEl.offsetHeight;
+    numberEl.style.animation = 'countdown-pulse 1s ease-in-out';
+    
+    const interval = setInterval(() => {
+      count--;
+      if (count > 0) {
+        numberEl.textContent = count;
+        numberEl.style.animation = 'none';
+        numberEl.offsetHeight;
+        numberEl.style.animation = 'countdown-pulse 1s ease-in-out';
+      } else if (count === 0) {
+        numberEl.textContent = 'GO!';
+        numberEl.style.color = '#4ade80';
+        numberEl.style.animation = 'none';
+        numberEl.offsetHeight;
+        numberEl.style.animation = 'countdown-pulse 0.5s ease-in-out';
+      } else {
+        clearInterval(interval);
+        overlay.classList.remove('visible');
+        resolve();
+      }
+    }, 1000);
+  });
+}
+
+function hideCountdown() {
+  const overlay = document.getElementById('countdown-overlay');
+  if (overlay) overlay.classList.remove('visible');
+}
+
+function playOriginalMultipleTimes(times) {
+  return new Promise((resolve) => {
+    const audio = new Audio(ChorusState.originalAudioUrl);
+    audio.playbackRate = ChorusState.playbackSpeed;
+    
+    let playCount = 0;
+    const label = document.getElementById('record-label');
+    
+    audio.addEventListener('ended', () => {
+      playCount++;
+      if (playCount < times && ChorusState.isRecording) {
+        label.textContent = `Playing ${playCount + 1}/${times}`;
+        audio.currentTime = 0;
+        audio.play();
+      } else {
+        resolve();
+      }
+    });
+    
+    label.textContent = `Playing 1/${times}`;
+    audio.play();
+  });
+}
+
+function onUserRecordingComplete() {
+  const playUserBtn = document.getElementById('play-user');
+  const downloadUserBtn = document.getElementById('download-user');
+  const compareBtn = document.getElementById('compare-btn');
+  const playheadUser = document.getElementById('playhead-user');
+  
+  playUserBtn.disabled = false;
+  downloadUserBtn.disabled = false;
+  compareBtn.disabled = false;
+  if (playheadUser) playheadUser.style.display = 'block';
+  
+  const userAudio = new Audio(ChorusState.userAudioUrl);
+  const vizUser = document.getElementById('viz-user');
+  
+  let animFrameUser;
+  
+  function updatePlayheadUser() {
+    if (userAudio.paused || userAudio.ended) return;
+    const progress = userAudio.currentTime / userAudio.duration;
+    playheadUser.style.left = `${progress * vizUser.clientWidth}px`;
+    animFrameUser = requestAnimationFrame(updatePlayheadUser);
+  }
+  
+  playUserBtn.addEventListener('click', () => {
+    if (userAudio.paused) {
+      userAudio.playbackRate = ChorusState.playbackSpeed;
+      userAudio.play();
+      playUserBtn.classList.add('playing');
+      playUserBtn.textContent = '⏸';
+      updatePlayheadUser();
+    } else {
+      userAudio.pause();
+      playUserBtn.classList.remove('playing');
+      playUserBtn.textContent = '▶';
+      cancelAnimationFrame(animFrameUser);
+    }
+  });
+
+  userAudio.addEventListener('ended', () => {
+    playUserBtn.classList.remove('playing');
+    playUserBtn.textContent = '▶';
+    cancelAnimationFrame(animFrameUser);
+    playheadUser.style.left = '0';
+  });
+  
+  vizUser.addEventListener('click', (e) => {
+    const rect = vizUser.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const progress = x / rect.width;
+    userAudio.currentTime = progress * userAudio.duration;
+    playheadUser.style.left = `${x}px`;
+  });
+
+  renderWaveform(ChorusState.userAudioBlob, 'canvas-user', '#818cf8');
+  
+  // Calculate and show score
+  calculatePronunciationScore();
+  
+  // Add to history
+  addToHistory(ChorusState.lastScore);
+  
+  showToast('Recording saved!', 'success');
+}
+
+// ============================================================================
+// AUDIO ANALYSIS & SCORING
+// ============================================================================
+
+function calculatePronunciationScore() {
+  if (!ChorusState.originalAudioBuffer || !ChorusState.userAudioBuffer) return;
+  
+  const originalData = ChorusState.originalAudioBuffer.getChannelData(0);
+  const userData = ChorusState.userAudioBuffer.getChannelData(0);
+  
+  // Simple spectral similarity using cross-correlation
+  const windowSize = 2048;
+  const hopSize = 512;
+  
+  let similarities = [];
+  
+  const minLen = Math.min(originalData.length, userData.length);
+  const numWindows = Math.floor((minLen - windowSize) / hopSize);
+  
+  for (let i = 0; i < numWindows; i++) {
+    const offset = i * hopSize;
+    
+    // Get RMS energy
+    let origEnergy = 0, userEnergy = 0;
+    for (let j = 0; j < windowSize; j++) {
+      origEnergy += originalData[offset + j] ** 2;
+      userEnergy += userData[offset + j] ** 2;
+    }
+    origEnergy = Math.sqrt(origEnergy / windowSize);
+    userEnergy = Math.sqrt(userEnergy / windowSize);
+    
+    // Skip silent regions
+    if (origEnergy < 0.01 && userEnergy < 0.01) continue;
+    
+    // Compute correlation
+    let corr = 0;
+    for (let j = 0; j < windowSize; j++) {
+      corr += originalData[offset + j] * userData[offset + j];
+    }
+    corr /= windowSize;
+    
+    // Normalize
+    const similarity = Math.min(1, Math.max(0, (corr / (origEnergy * userEnergy + 0.001) + 1) / 2));
+    similarities.push(similarity);
+  }
+  
+  // Calculate average score
+  const avgScore = similarities.length > 0 
+    ? similarities.reduce((a, b) => a + b, 0) / similarities.length 
+    : 0;
+  
+  const finalScore = Math.round(avgScore * 100);
+  ChorusState.lastScore = finalScore;
+  
+  // Display score
+  const scoreDisplay = document.getElementById('score-display');
+  const scoreValue = document.getElementById('score-value');
+  const scoreFeedback = document.getElementById('score-feedback');
+  const scoreCircle = scoreDisplay.querySelector('.score-circle');
+  
+  scoreDisplay.classList.add('visible');
+  scoreValue.textContent = `${finalScore}%`;
+  scoreCircle.style.setProperty('--score', finalScore);
+  
+  // Feedback based on score
+  if (finalScore >= 80) {
+    scoreFeedback.textContent = 'Excellent! Native-like pronunciation! 🌟';
+    scoreValue.style.color = '#4ade80';
+  } else if (finalScore >= 60) {
+    scoreFeedback.textContent = 'Good effort! Keep practicing! 👍';
+    scoreValue.style.color = '#fbbf24';
+  } else {
+    scoreFeedback.textContent = 'Try again - focus on rhythm and tone 💪';
+    scoreValue.style.color = '#f87171';
+  }
+}
+
+// ============================================================================
+// VISUALIZATIONS
+// ============================================================================
+
+async function renderWaveform(blob, canvasId, color) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const container = canvas.parentElement;
+  
+  const dpr = window.devicePixelRatio || 1;
+  const displayWidth = container.clientWidth;
+  const displayHeight = container.clientHeight;
+  
+  canvas.width = displayWidth * dpr;
+  canvas.height = displayHeight * dpr;
+  canvas.style.width = displayWidth + 'px';
+  canvas.style.height = displayHeight + 'px';
+  ctx.scale(dpr, dpr);
+
+  try {
+    const audioCtx = getAudioContext();
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    
+    const data = audioBuffer.getChannelData(0);
+    const samples = displayWidth * 2;
+    const step = Math.floor(data.length / samples);
+    
+    // Background
+    const bgGradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
+    bgGradient.addColorStop(0, '#1e1e3f');
+    bgGradient.addColorStop(0.5, '#1a1a35');
+    bgGradient.addColorStop(1, '#16162a');
+    ctx.fillStyle = bgGradient;
+    ctx.fillRect(0, 0, displayWidth, displayHeight);
+    
+    // Grid
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = (displayHeight / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(displayWidth, y);
+      ctx.stroke();
+    }
+    
+    // Waveform
+    const waveGradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
+    waveGradient.addColorStop(0, color);
+    waveGradient.addColorStop(0.5, color);
+    waveGradient.addColorStop(1, color);
+    
+    ctx.strokeStyle = waveGradient;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    
+    const centerY = displayHeight / 2;
+    const amplitude = (displayHeight / 2) - 15;
+    
+    for (let i = 0; i < samples; i++) {
+      let min = 1.0, max = -1.0;
+      for (let j = 0; j < step; j++) {
+        const idx = (i * step) + j;
+        if (idx < data.length) {
+          const d = data[idx];
+          if (d < min) min = d;
+          if (d > max) max = d;
+        }
+      }
+      
+      const x = (i / samples) * displayWidth;
+      const yMin = centerY - (max * amplitude);
+      const yMax = centerY - (min * amplitude);
+      
+      ctx.moveTo(x, yMin);
+      ctx.lineTo(x, yMax);
+    }
+    
+    ctx.stroke();
+    
+    // Glow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 4;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    
+    // Center line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(displayWidth, centerY);
+    ctx.stroke();
+    
+    // Timeline
+    const duration = audioBuffer.duration;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.fillRect(0, displayHeight - 16, displayWidth, 16);
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.font = '9px SF Mono, Consolas, monospace';
+    
+    const markers = 5;
+    for (let i = 0; i <= markers; i++) {
+      const time = (duration / markers) * i;
+      const x = (i / markers) * displayWidth;
+      const label = formatTime(time);
+      
+      ctx.textAlign = i === 0 ? 'left' : i === markers ? 'right' : 'center';
+      ctx.fillText(label, i === 0 ? x + 3 : i === markers ? x - 3 : x, displayHeight - 4);
+    }
+    
+  } catch (err) {
+    console.error('Waveform render error:', err);
+  }
+}
+
+async function renderSpectrogram(blob, canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const container = canvas.parentElement;
+  
+  const dpr = window.devicePixelRatio || 1;
+  const displayWidth = container.clientWidth;
+  const displayHeight = container.clientHeight;
+  
+  canvas.width = displayWidth * dpr;
+  canvas.height = displayHeight * dpr;
+  canvas.style.width = displayWidth + 'px';
+  canvas.style.height = displayHeight + 'px';
+  ctx.scale(dpr, dpr);
+
+  try {
+    const audioCtx = getAudioContext();
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    
+    const data = audioBuffer.getChannelData(0);
+    const fftSize = 256;
+    const stepSize = Math.floor(data.length / displayWidth);
+    
+    const bgGradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
+    bgGradient.addColorStop(0, '#1e1e3f');
+    bgGradient.addColorStop(1, '#0f0f1a');
+    ctx.fillStyle = bgGradient;
+    ctx.fillRect(0, 0, displayWidth, displayHeight);
+    
+    for (let x = 0; x < displayWidth; x++) {
+      const offset = x * stepSize;
+      
+      for (let y = 0; y < displayHeight - 16; y++) {
+        const freqBin = (displayHeight - 16 - y) / (displayHeight - 16);
+        
+        let energy = 0;
+        const binSize = Math.min(fftSize, data.length - offset);
+        
+        for (let i = 0; i < binSize; i++) {
+          const sample = data[offset + i] || 0;
+          energy += sample * sample * Math.sin(freqBin * Math.PI * i / binSize);
+        }
+        
+        energy = Math.abs(energy / binSize);
+        const intensity = Math.min(1, energy * 50);
+        
+        if (intensity > 0.05) {
+          const hue = 280 - (intensity * 200);
+          ctx.fillStyle = `hsl(${hue}, 80%, ${20 + intensity * 50}%)`;
+          ctx.fillRect(x, y, 1, 1);
+        }
+      }
+    }
+    
+    // Timeline
+    const duration = audioBuffer.duration;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, displayHeight - 16, displayWidth, 16);
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.font = '9px SF Mono, Consolas, monospace';
+    
+    const markers = 5;
+    for (let i = 0; i <= markers; i++) {
+      const time = (duration / markers) * i;
+      const xPos = (i / markers) * displayWidth;
+      ctx.textAlign = i === 0 ? 'left' : i === markers ? 'right' : 'center';
+      ctx.fillText(formatTime(time), i === 0 ? xPos + 3 : i === markers ? xPos - 3 : xPos, displayHeight - 4);
+    }
+    
+  } catch (err) {
+    console.error('Spectrogram render error:', err);
+  }
+}
+
+async function renderPitchContour(blob, canvasId, color) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const container = canvas.parentElement;
+  
+  const dpr = window.devicePixelRatio || 1;
+  const displayWidth = container.clientWidth;
+  const displayHeight = container.clientHeight;
+  
+  canvas.width = displayWidth * dpr;
+  canvas.height = displayHeight * dpr;
+  canvas.style.width = displayWidth + 'px';
+  canvas.style.height = displayHeight + 'px';
+  ctx.scale(dpr, dpr);
+
+  try {
+    const audioCtx = getAudioContext();
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    
+    const data = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
+    const frameSize = Math.floor(sampleRate * 0.03);
+    const hopSize = Math.floor(frameSize / 2);
+    
+    // Background
+    const bgGradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
+    bgGradient.addColorStop(0, '#1e1e3f');
+    bgGradient.addColorStop(1, '#16162a');
+    ctx.fillStyle = bgGradient;
+    ctx.fillRect(0, 0, displayWidth, displayHeight);
+    
+    // Grid
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = ((displayHeight - 16) / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(displayWidth, y);
+      ctx.stroke();
+    }
+    
+    // Detect pitch
+    const pitches = [];
+    for (let i = 0; i < data.length - frameSize; i += hopSize) {
+      const frame = data.slice(i, i + frameSize);
+      const pitch = detectPitch(frame, sampleRate);
+      pitches.push(pitch);
+    }
+    
+    const validPitches = pitches.filter(p => p > 0);
+    const minPitch = Math.min(...validPitches) || 80;
+    const maxPitch = Math.max(...validPitches) || 400;
+    
+    // Draw pitch
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    
+    let started = false;
+    
+    for (let i = 0; i < pitches.length; i++) {
+      const x = (i / pitches.length) * displayWidth;
+      const pitch = pitches[i];
+      
+      if (pitch > 0) {
+        const y = (displayHeight - 16) - ((pitch - minPitch) / (maxPitch - minPitch)) * (displayHeight - 36) - 10;
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      } else if (started) {
+        ctx.stroke();
+        ctx.beginPath();
+        started = false;
+      }
+    }
+    ctx.stroke();
+    
+    // Glow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    
+    // Labels
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = '9px SF Mono, Consolas, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${Math.round(maxPitch)}Hz`, 4, 12);
+    ctx.fillText(`${Math.round(minPitch)}Hz`, 4, displayHeight - 22);
+    
+    // Timeline
+    const duration = audioBuffer.duration;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.fillRect(0, displayHeight - 16, displayWidth, 16);
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    const markers = 5;
+    for (let i = 0; i <= markers; i++) {
+      const time = (duration / markers) * i;
+      const xPos = (i / markers) * displayWidth;
+      ctx.textAlign = i === 0 ? 'left' : i === markers ? 'right' : 'center';
+      ctx.fillText(formatTime(time), i === 0 ? xPos + 3 : i === markers ? xPos - 3 : xPos, displayHeight - 4);
+    }
+    
+  } catch (err) {
+    console.error('Pitch contour render error:', err);
+  }
+}
+
+async function renderPitchOverlay() {
+  if (!ChorusState.originalAudioBuffer || !ChorusState.userAudioBuffer) {
+    showToast('Record first to compare!', 'warning');
+    return;
+  }
+  
+  const canvas = document.getElementById('canvas-original');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const container = canvas.parentElement;
+  
+  const dpr = window.devicePixelRatio || 1;
+  const displayWidth = container.clientWidth;
+  const displayHeight = container.clientHeight;
+  
+  canvas.width = displayWidth * dpr;
+  canvas.height = displayHeight * dpr;
+  canvas.style.width = displayWidth + 'px';
+  canvas.style.height = displayHeight + 'px';
+  ctx.scale(dpr, dpr);
+
+  // Background
+  const bgGradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
+  bgGradient.addColorStop(0, '#1e1e3f');
+  bgGradient.addColorStop(1, '#16162a');
+  ctx.fillStyle = bgGradient;
+  ctx.fillRect(0, 0, displayWidth, displayHeight);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  for (let i = 0; i <= 4; i++) {
+    const y = ((displayHeight - 16) / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(displayWidth, y);
+    ctx.stroke();
+  }
+
+  // Extract pitches for both
+  const originalPitches = extractPitches(ChorusState.originalAudioBuffer);
+  const userPitches = extractPitches(ChorusState.userAudioBuffer);
+  
+  const allValid = [...originalPitches, ...userPitches].filter(p => p > 0);
+  const minPitch = Math.min(...allValid) || 80;
+  const maxPitch = Math.max(...allValid) || 400;
+  
+  // Draw original pitch (green)
+  drawPitchLine(ctx, originalPitches, displayWidth, displayHeight, minPitch, maxPitch, '#4ade80');
+  
+  // Draw user pitch (purple)
+  drawPitchLine(ctx, userPitches, displayWidth, displayHeight, minPitch, maxPitch, '#818cf8');
+  
+  // Legend
+  ctx.fillStyle = '#4ade80';
+  ctx.fillRect(displayWidth - 100, 8, 12, 12);
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.font = '10px sans-serif';
+  ctx.fillText('Target', displayWidth - 84, 17);
+  
+  ctx.fillStyle = '#818cf8';
+  ctx.fillRect(displayWidth - 100, 24, 12, 12);
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fillText('You', displayWidth - 84, 33);
+  
+  // Timeline
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+  ctx.fillRect(0, displayHeight - 16, displayWidth, 16);
+}
+
+function extractPitches(audioBuffer) {
+  const data = audioBuffer.getChannelData(0);
+  const sampleRate = audioBuffer.sampleRate;
+  const frameSize = Math.floor(sampleRate * 0.03);
+  const hopSize = Math.floor(frameSize / 2);
+  
+  const pitches = [];
+  for (let i = 0; i < data.length - frameSize; i += hopSize) {
+    const frame = data.slice(i, i + frameSize);
+    pitches.push(detectPitch(frame, sampleRate));
+  }
+  return pitches;
+}
+
+function drawPitchLine(ctx, pitches, width, height, minPitch, maxPitch, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  
+  let started = false;
+  
+  for (let i = 0; i < pitches.length; i++) {
+    const x = (i / pitches.length) * width;
+    const pitch = pitches[i];
+    
+    if (pitch > 0) {
+      const y = (height - 16) - ((pitch - minPitch) / (maxPitch - minPitch)) * (height - 36) - 10;
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    } else if (started) {
+      ctx.stroke();
+      ctx.beginPath();
+      started = false;
+    }
+  }
+  ctx.stroke();
+  
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 4;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+function detectPitch(frame, sampleRate) {
+  let zeroCrossings = 0;
+  for (let i = 1; i < frame.length; i++) {
+    if ((frame[i] >= 0 && frame[i - 1] < 0) || (frame[i] < 0 && frame[i - 1] >= 0)) {
+      zeroCrossings++;
+    }
+  }
+  const frequency = (zeroCrossings * sampleRate) / (2 * frame.length);
+  return (frequency > 50 && frequency < 600) ? frequency : 0;
+}
+
+// ============================================================================
+// COMPARISON & DOWNLOAD
+// ============================================================================
+
+async function playComparison() {
+  const compareBtn = document.getElementById('compare-btn');
+  
+  if (!ChorusState.userAudioUrl) {
+    showToast('Record yourself first!', 'warning');
+    return;
+  }
+  
+  compareBtn.disabled = true;
+  compareBtn.classList.add('playing');
+  compareBtn.textContent = '▶ Playing...';
+  
+  const originalAudio = new Audio(ChorusState.originalAudioUrl);
+  const userAudio = new Audio(ChorusState.userAudioUrl);
+  
+  originalAudio.playbackRate = ChorusState.playbackSpeed;
+  userAudio.playbackRate = ChorusState.playbackSpeed;
+  
+  // Animate playheads
+  const vizOriginal = document.getElementById('viz-original');
+  const vizUser = document.getElementById('viz-user');
+  const playheadOriginal = document.getElementById('playhead-original');
+  const playheadUser = document.getElementById('playhead-user');
+  
+  let animFrame;
+  
+  function updatePlayheads() {
+    if (!originalAudio.paused && !originalAudio.ended) {
+      const p = originalAudio.currentTime / originalAudio.duration;
+      playheadOriginal.style.left = `${p * vizOriginal.clientWidth}px`;
+    }
+    if (!userAudio.paused && !userAudio.ended) {
+      const p = userAudio.currentTime / userAudio.duration;
+      playheadUser.style.left = `${p * vizUser.clientWidth}px`;
+    }
+    if (!originalAudio.ended || !userAudio.ended) {
+      animFrame = requestAnimationFrame(updatePlayheads);
+    }
+  }
+  
+  let finishedCount = 0;
+  const onEnded = () => {
+    finishedCount++;
+    if (finishedCount >= 2) {
+      cancelAnimationFrame(animFrame);
+      compareBtn.disabled = false;
+      compareBtn.classList.remove('playing');
+      compareBtn.textContent = '🔄 A/B';
+    }
+  };
+  
+  originalAudio.addEventListener('ended', onEnded);
+  userAudio.addEventListener('ended', onEnded);
+  
+  originalAudio.play();
+  userAudio.play();
+  updatePlayheads();
+}
+
+function downloadAudio(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${filename}-${formatTime(ChorusState.capturedStartTime)}-${formatTime(ChorusState.capturedEndTime)}.webm`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Audio downloaded!', 'success');
+}
+
+// ============================================================================
+// HISTORY & SRS MODALS (Simplified)
+// ============================================================================
+
+function showHistoryModal() {
+  showToast(`You have ${ChorusState.practiceHistory.length} practice sessions recorded`, 'info');
+  // Full modal implementation would go here
+}
+
+function showSRSModal() {
+  const dueCount = getDueCards().length;
+  showToast(`${ChorusState.srsCards.length} flashcards total, ${dueCount} due for review`, 'info');
+  // Full modal implementation would go here
+}
+
+// ============================================================================
+// HOTKEY & MESSAGE HANDLING
+// ============================================================================
+
+function setupHotkey() {
+  document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() !== 'h') return;
+    
+    const active = document.activeElement;
+    const isTyping = active && (
+      active.tagName === 'INPUT' ||
+      active.tagName === 'TEXTAREA' ||
+      active.contentEditable === 'true'
+    );
+    
+    if (isTyping || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+    if (!window.location.href.includes('/watch')) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    togglePanel();
+  }, true);
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'startChorus') {
+    showPanel();
+    loadSubtitles();
+  }
+  if (message.action === 'stopChorus') {
+    hidePanel();
+  }
+  if (message.action === 'subtitlesFetched') {
+    renderSubtitles(message.data);
+  }
+  sendResponse({ status: 'ok' });
+});
+
+async function loadSubtitles() {
+  const videoId = getVideoId();
+  
+  chrome.runtime.sendMessage({ action: 'checkCache', videoId }, (response) => {
+    if (chrome.runtime.lastError) return;
+    if (response?.cached) {
+      renderSubtitles(response.data);
+    } else {
+      triggerSubtitleLoad();
+    }
+  });
+}
+
+async function triggerSubtitleLoad() {
+  try {
+    const ccButton = await waitForElement('.ytp-subtitles-button', 5000);
+    if (ccButton.getAttribute('aria-pressed') === 'false') {
+      ccButton.click();
+      setTimeout(() => ccButton.click(), 100);
+    }
+  } catch (e) {
+    console.warn('Subtitle button not found:', e);
+  }
+}
+
+function waitForElement(selector, timeout = 5000) {
   return new Promise((resolve, reject) => {
     const interval = 100;
     let elapsed = 0;
@@ -1677,92 +3916,60 @@ async function waitForElement(selector, timeout = 5000) {
       const el = document.querySelector(selector);
       if (el) return resolve(el);
       elapsed += interval;
-      if (elapsed >= timeout) reject(`Timeout: ${selector} not found`);
+      if (elapsed >= timeout) reject(`Timeout: ${selector}`);
       else setTimeout(check, interval);
     };
     check();
   });
 }
 
-// ▶️ Click the subtitles/CC button if needed
-async function clickSubtitlesButton() {
-  try {
-    const ccButton = await waitForElement('.ytp-subtitles-button');
-    if (ccButton.getAttribute('aria-pressed') === 'false') {
-      ccButton.click();
-      ccButton.click();
-      console.log('✅ Subtitles toggled ON and then Off');
-    } else {
-      console.log('🟡 Subtitles already ON, should automatically get the data');
+// ============================================================================
+// URL CHANGE DETECTION
+// ============================================================================
+
+let lastUrl = location.href;
+
+new MutationObserver(() => {
+  if (location.href !== lastUrl) {
+    lastUrl = location.href;
+    handleVideoChange();
+  }
+}).observe(document, { childList: true, subtree: true });
+
+function handleVideoChange() {
+  if (!window.location.href.includes('/watch')) return;
+  
+  ChorusState.subtitles = [];
+  ChorusState.currentIndex = -1;
+  ChorusState.selectedIndices.clear();
+  ChorusState.selectionAnchor = null;
+  
+  if (ChorusState.isVisible) {
+    const list = document.getElementById('chorus-subtitle-list');
+    if (list) {
+      list.innerHTML = `
+        <div class="chorus-empty-state">
+          <div class="chorus-loading-spinner"></div>
+          <div class="chorus-empty-title">Loading Subtitles</div>
+          <div class="chorus-empty-subtitle">Please wait...</div>
+        </div>
+      `;
     }
-  } catch (e) {
-    console.warn('⚠️ Subtitle button error:', e);
+    updateSelectionUI();
+    chrome.runtime.sendMessage({ action: 'startChorus' });
+    setTimeout(triggerSubtitleLoad, 1000);
   }
 }
 
-// 🚀 Handle when a new video is loaded
-function handleVideoChange(currentUrl) {
-  // Only trigger on actual YouTube video pages
-  if (!currentUrl.includes("/watch")) {
-    console.log("⏩ Skipping non-video page:", currentUrl);
-    return;
-  }
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
 
-  console.log("🎥 New video detected:", currentUrl);
-
-  // Reset subtitle state for new video
-  currentSubtitles = [];
-  currentSubtitleIndex = -1;
-  selectedSubtitles.clear();
-
-  // Reset toggle states for new video
-  if (isCombinedView) {
-    isCombinedView = false;
-    const combineBtn = document.getElementById('combine-selected');
-    if (combineBtn) {
-      combineBtn.classList.remove('toggle-active');
-      combineBtn.innerHTML = '☐ Combine selected';
-    }
-  }
-
-  if (isShowOnlySelected) {
-    isShowOnlySelected = false;
-    const showOnlyBtn = document.getElementById('show-only-selected');
-    if (showOnlyBtn) {
-      showOnlyBtn.classList.remove('toggle-active');
-      showOnlyBtn.innerHTML = '☐ Show only selected';
-    }
-  }
-
-  // Show loading state if subtitle overlay is visible
-  if (subtitleOverlay && subtitleOverlay.style.display !== 'none') {
-    const container = document.getElementById('chorus-subtitle-container');
-    if (container) {
-      container.innerHTML = '<div class="chorus-loading">Loading subtitles...</div>';
-    }
-    updateControlButtons(); // Disable buttons while loading
-  }
-
-  chrome.runtime.sendMessage({ action: "startChorus" }, (response) => {
-    console.log("📣 Notified background of new video:", response?.status);
-  });
-
-  // Wait a bit for player UI to settle
-  setTimeout(() => {
-    clickSubtitlesButton();
-  }, 1000);
+function init() {
+  console.log('🎵 Chorus Mode v2.0 initialized');
+  injectStyles();
+  setupHotkey();
+  loadAllData();
 }
 
-
-
-// 🧩 Init everything once per content script load
-async function init() {
-  console.log('🎬 YouTube subtitle interceptor loaded');
-  // Initialize hotkey listener when the script loads
-  setupHotkeyListener();
-  const isCached = await checkCached();
-  if (!isCached) {
-    clickSubtitlesButton();
-  }
-  //handleVideoChange();
-}
+init();
