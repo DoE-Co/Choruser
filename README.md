@@ -9,7 +9,7 @@ While the project is still under active development, the current version include
 
 ---
 
-## **Current Features (Implemented)**
+## **Current Features **
 
 ### **YouTube Subtitle Selector**
 
@@ -27,13 +27,9 @@ While the project is still under active development, the current version include
 * Early prototype interface for selecting subtitles and marking segments to shadow.
 * Built to integrate natively with the YouTube player environment.
 
----
-
-##  ** Features (In Development)**
 
 ### **Automatic Prosody Analysis**
 
-Integration with Whisper, **torchaudio**, **librosa**, and **Praat/Parselmouth** for:
 
 * f0 (pitch contour) extraction
 * energy envelope extraction
