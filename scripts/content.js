@@ -56,22 +56,28 @@ const ChorusState = {
   
   // A-B Loop State
   abLoopEnabled: false,
-  abLoopStart: 0, // 0 to 1 percentage
+  abLoopStart: 0,
   abLoopEnd: 1,
   
   // Visualization State
-  currentVizMode: 'waveform', // 'waveform', 'spectrogram', 'pitch', 'overlay'
+  currentVizMode: 'waveform',
   
   // Practice Queue
-  practiceQueue: [], // Array of { videoId, subtitleIndex, text, startTime, endTime }
+  practiceQueue: [],
   currentQueueIndex: 0,
   isQueueMode: false,
   
   // Practice History (persisted)
-  practiceHistory: [], // Array of { videoId, videoTitle, subtitleIndex, text, timestamp, score }
+  practiceHistory: [],
   
   // SRS State (persisted)
-  srsCards: [], // Array of SRS cards
+  srsCards: [],
+  
+  // SRS Review State
+  currentSRSCard: null,
+  isReviewingCard: false,
+  dueCardQueue: [],
+  currentDueIndex: 0,
   
   // Pronunciation Score
   lastScore: null,
@@ -1358,16 +1364,6 @@ const CHORUS_STYLES = `
     transform: translateY(-1px);
   }
 
-  /* ========== REAL-TIME WAVEFORM ========== */
-  .realtime-waveform {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    pointer-events: none;
-  }
-
   /* ========== COUNTDOWN OVERLAY ========== */
   .countdown-overlay {
     position: fixed;
@@ -1543,8 +1539,132 @@ const CHORUS_STYLES = `
     border-color: var(--chorus-warning);
     background: rgba(245, 158, 11, 0.15);
   }
-`;
 
+  /* ========== SRS REVIEW STYLES ========== */
+  .srs-review-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.15));
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    border-radius: var(--chorus-radius-md);
+    margin-bottom: 8px;
+  }
+
+  .srs-review-progress {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fcd34d;
+  }
+
+  .srs-review-video {
+    font-size: 11px;
+    color: var(--chorus-text-muted);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .srs-rating-section {
+    background: linear-gradient(180deg, rgba(30, 30, 50, 0.9) 0%, rgba(25, 25, 45, 0.95) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--chorus-radius-lg);
+    padding: 20px;
+    margin-top: 8px;
+  }
+
+  .srs-rating-label {
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--chorus-text-secondary);
+    margin-bottom: 16px;
+  }
+
+  .srs-rating-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
+
+  .srs-rate-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 20px;
+    border-radius: var(--chorus-radius-md);
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all var(--chorus-transition-fast);
+    min-width: 80px;
+  }
+
+  .srs-rate-btn .rate-emoji {
+    font-size: 24px;
+  }
+
+  .srs-rate-btn .rate-text {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .srs-rate-btn .rate-interval {
+    font-size: 10px;
+    opacity: 0.7;
+    font-family: 'SF Mono', 'Consolas', monospace;
+  }
+
+  .srs-rate-btn.again {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+  }
+
+  .srs-rate-btn.again:hover {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: #ef4444;
+    transform: translateY(-2px);
+  }
+
+  .srs-rate-btn.hard {
+    background: rgba(251, 191, 36, 0.15);
+    border-color: rgba(251, 191, 36, 0.3);
+    color: #fcd34d;
+  }
+
+  .srs-rate-btn.hard:hover {
+    background: rgba(251, 191, 36, 0.25);
+    border-color: #fbbf24;
+    transform: translateY(-2px);
+  }
+
+  .srs-rate-btn.good {
+    background: rgba(74, 222, 128, 0.15);
+    border-color: rgba(74, 222, 128, 0.3);
+    color: #86efac;
+  }
+
+  .srs-rate-btn.good:hover {
+    background: rgba(74, 222, 128, 0.25);
+    border-color: #4ade80;
+    transform: translateY(-2px);
+  }
+
+  .srs-rate-btn.easy {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: rgba(99, 102, 241, 0.3);
+    color: #c7d2fe;
+  }
+
+  .srs-rate-btn.easy:hover {
+    background: rgba(99, 102, 241, 0.25);
+    border-color: #6366f1;
+    transform: translateY(-2px);
+  }
+`;
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
@@ -1599,6 +1719,15 @@ function getVideoTitle() {
   return titleEl?.textContent?.trim() || document.title || 'Unknown Video';
 }
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 // ============================================================================
 // PERSISTENCE FUNCTIONS
 // ============================================================================
@@ -1645,7 +1774,6 @@ function loadPracticeHistory() {
 }
 
 function savePracticeHistory() {
-  // Keep only last 500 entries
   if (ChorusState.practiceHistory.length > 500) {
     ChorusState.practiceHistory = ChorusState.practiceHistory.slice(-500);
   }
@@ -1663,11 +1791,9 @@ function addToHistory(score = null) {
     score: score
   };
   
-  // Read existing history first, then add new entry (avoid race condition)
   chrome.storage.local.get('chorus-history', (result) => {
     let history = result['chorus-history'] || [];
     history.push(entry);
-    // Keep only last 500 entries
     if (history.length > 500) {
       history = history.slice(-500);
     }
@@ -1711,7 +1837,6 @@ function createSRSCard() {
     return;
   }
   
-  // Convert blob to base64 for storage
   const reader = new FileReader();
   reader.onload = () => {
     const card = {
@@ -1723,7 +1848,6 @@ function createSRSCard() {
       endTime: ChorusState.capturedEndTime,
       audioBase64: reader.result,
       created: Date.now(),
-      // SM-2 fields
       interval: 1,
       repetition: 0,
       easeFactor: 2.5,
@@ -1731,7 +1855,6 @@ function createSRSCard() {
       lastReview: null
     };
     
-    // Read existing cards first, then add new one (avoid race condition)
     chrome.storage.local.get('chorus-srs-cards', (result) => {
       const existingCards = result['chorus-srs-cards'] || [];
       existingCards.push(card);
@@ -1747,11 +1870,9 @@ function createSRSCard() {
 }
 
 function reviewSRSCard(cardId, quality) {
-  // quality: 0-5 (0-2 = again, 3 = hard, 4 = good, 5 = easy)
   const card = ChorusState.srsCards.find(c => c.id === cardId);
   if (!card) return;
   
-  // SM-2 Algorithm
   if (quality >= 3) {
     if (card.repetition === 0) {
       card.interval = 1;
@@ -1790,6 +1911,376 @@ function updateSRSBadge() {
       badge.classList.remove('has-badge');
     }
   }
+}
+
+// ============================================================================
+// SRS REVIEW MODE
+// ============================================================================
+
+function startSRSReviewMode(dueCards) {
+  if (!dueCards || dueCards.length === 0) {
+    showToast('No cards due for review!', 'warning');
+    return;
+  }
+  
+  ChorusState.dueCardQueue = dueCards;
+  ChorusState.currentDueIndex = 0;
+  ChorusState.isReviewingCard = true;
+  
+  openStudioWithSRSCard(dueCards[0]);
+}
+
+async function openStudioWithSRSCard(card) {
+  if (!card || !card.audioBase64) {
+    showToast('Card has no audio data!', 'error');
+    return;
+  }
+  
+  ChorusState.currentSRSCard = card;
+  ChorusState.isReviewingCard = true;
+  
+  try {
+    const response = await fetch(card.audioBase64);
+    const blob = await response.blob();
+    
+    ChorusState.originalAudioBlob = blob;
+    ChorusState.originalAudioUrl = URL.createObjectURL(blob);
+    ChorusState.capturedStartTime = card.startTime;
+    ChorusState.capturedEndTime = card.endTime;
+    ChorusState.capturedSubtitleText = card.text;
+    
+    if (ChorusState.userAudioUrl) URL.revokeObjectURL(ChorusState.userAudioUrl);
+    ChorusState.userAudioBlob = null;
+    ChorusState.userAudioUrl = null;
+    ChorusState.userAudioBuffer = null;
+    ChorusState.lastScore = null;
+    
+    const audioCtx = getAudioContext();
+    const arrayBuffer = await blob.arrayBuffer();
+    ChorusState.originalAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    
+    showStudio();
+    document.getElementById('studio-time-range').textContent = 
+      `${formatTime(card.startTime)} - ${formatTime(card.endTime)}`;
+    
+    renderSRSStudioContent();
+    
+  } catch (err) {
+    console.error('Failed to open SRS card:', err);
+    showToast('Failed to load card audio', 'error');
+  }
+}
+
+function renderSRSStudioContent() {
+  const card = ChorusState.currentSRSCard;
+  const content = document.getElementById('studio-content');
+  
+  const progressText = ChorusState.dueCardQueue.length > 0 
+    ? `Card ${ChorusState.currentDueIndex + 1} of ${ChorusState.dueCardQueue.length}`
+    : 'Single Card Review';
+  
+  content.innerHTML = `
+    <div class="srs-review-header">
+      <div class="srs-review-progress">${progressText}</div>
+      <div class="srs-review-video">${escapeHtml(card.videoTitle || 'Unknown Video')}</div>
+    </div>
+
+    <div class="studio-subtitle-display">
+      <div class="studio-subtitle-text">${escapeHtml(card.text)}</div>
+      <div class="studio-subtitle-time">${formatTime(card.startTime)} - ${formatTime(card.endTime)}</div>
+    </div>
+
+    <div class="score-display" id="score-display">
+      <div class="score-circle" style="--score: 0">
+        <span class="score-value" id="score-value">--</span>
+      </div>
+      <div class="score-details">
+        <div class="score-label">Similarity Score</div>
+        <div class="score-feedback" id="score-feedback">Record to get your score!</div>
+      </div>
+    </div>
+
+    <div class="audio-track">
+      <div class="track-header">
+        <div class="track-label original">
+          <span class="track-dot original"></span>
+          Target Audio
+        </div>
+        <div class="track-controls">
+          <div class="viz-tabs" data-track="original">
+            <button class="viz-tab active" data-viz="waveform">Wave</button>
+            <button class="viz-tab" data-viz="spectrogram">Spec</button>
+            <button class="viz-tab" data-viz="pitch">Pitch</button>
+            <button class="viz-tab" data-viz="overlay">Compare</button>
+          </div>
+          <button class="track-btn" id="play-original" title="Play">▶</button>
+        </div>
+      </div>
+      <div class="visualization-container" id="viz-original">
+        <canvas id="canvas-original"></canvas>
+        <div class="playhead" id="playhead-original" style="left: 0"></div>
+      </div>
+    </div>
+
+    <div class="audio-track">
+      <div class="track-header">
+        <div class="track-label user">
+          <span class="track-dot user"></span>
+          Your Recording
+        </div>
+        <div class="track-controls">
+          <div class="viz-tabs" data-track="user">
+            <button class="viz-tab active" data-viz="waveform">Wave</button>
+            <button class="viz-tab" data-viz="spectrogram">Spec</button>
+            <button class="viz-tab" data-viz="pitch">Pitch</button>
+          </div>
+          <button class="track-btn" id="play-user" title="Play" disabled>▶</button>
+        </div>
+      </div>
+      <div class="visualization-container" id="viz-user">
+        <div class="visualization-placeholder">Record to see visualization</div>
+        <canvas id="canvas-user" style="display:none"></canvas>
+        <div class="playhead" id="playhead-user" style="left: 0; display: none"></div>
+      </div>
+    </div>
+
+    <div class="playback-controls">
+      <div class="control-group">
+        <span class="control-label">Speed</span>
+        <div class="control-group-row">
+          <button class="speed-btn" data-speed="0.5">0.5×</button>
+          <button class="speed-btn" data-speed="0.75">0.75×</button>
+          <button class="speed-btn active" data-speed="1">1×</button>
+          <button class="speed-btn" data-speed="1.25">1.25×</button>
+        </div>
+      </div>
+      
+      <div class="control-group">
+        <span class="control-label">Listen</span>
+        <div class="control-group-row">
+          <button class="listen-btn active" data-listen="1">1×</button>
+          <button class="listen-btn" data-listen="2">2×</button>
+          <button class="listen-btn" data-listen="3">3×</button>
+        </div>
+      </div>
+      
+      <div class="record-btn-container">
+        <button class="record-btn" id="studio-record-btn">
+          <div class="record-btn-inner"></div>
+        </button>
+        <span class="record-label" id="record-label">Record</span>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Compare</span>
+        <button class="compare-btn" id="compare-btn" disabled>🔄 A/B</button>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Loop</span>
+        <button class="loop-btn" id="loop-btn" title="Loop">🔁</button>
+      </div>
+    </div>
+
+    <div class="srs-rating-section" id="srs-rating-section">
+      <div class="srs-rating-label">How well did you do?</div>
+      <div class="srs-rating-buttons">
+        <button class="srs-rate-btn again" data-quality="0">
+          <span class="rate-emoji">😓</span>
+          <span class="rate-text">Again</span>
+          <span class="rate-interval">1d</span>
+        </button>
+        <button class="srs-rate-btn hard" data-quality="3">
+          <span class="rate-emoji">😐</span>
+          <span class="rate-text">Hard</span>
+          <span class="rate-interval">${Math.max(1, Math.round((card.interval || 1) * 1.2))}d</span>
+        </button>
+        <button class="srs-rate-btn good" data-quality="4">
+          <span class="rate-emoji">😊</span>
+          <span class="rate-text">Good</span>
+          <span class="rate-interval">${Math.round((card.interval || 1) * (card.easeFactor || 2.5))}d</span>
+        </button>
+        <button class="srs-rate-btn easy" data-quality="5">
+          <span class="rate-emoji">🌟</span>
+          <span class="rate-text">Easy</span>
+          <span class="rate-interval">${Math.round((card.interval || 1) * (card.easeFactor || 2.5) * 1.3)}d</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  setupSRSStudioEvents();
+  renderWaveform(ChorusState.originalAudioBlob, 'canvas-original', '#4ade80');
+}
+
+function setupSRSStudioEvents() {
+  const originalAudio = new Audio(ChorusState.originalAudioUrl);
+  const playOriginalBtn = document.getElementById('play-original');
+  const vizOriginal = document.getElementById('viz-original');
+  const playheadOriginal = document.getElementById('playhead-original');
+  
+  let animFrameOriginal;
+  
+  function updatePlayheadOriginal() {
+    if (originalAudio.paused || originalAudio.ended) return;
+    const progress = originalAudio.currentTime / originalAudio.duration;
+    playheadOriginal.style.left = `${progress * vizOriginal.clientWidth}px`;
+    animFrameOriginal = requestAnimationFrame(updatePlayheadOriginal);
+  }
+  
+  playOriginalBtn.addEventListener('click', () => {
+    if (originalAudio.paused) {
+      originalAudio.playbackRate = ChorusState.playbackSpeed;
+      originalAudio.play();
+      playOriginalBtn.classList.add('playing');
+      playOriginalBtn.textContent = '⏸';
+      updatePlayheadOriginal();
+    } else {
+      originalAudio.pause();
+      playOriginalBtn.classList.remove('playing');
+      playOriginalBtn.textContent = '▶';
+      cancelAnimationFrame(animFrameOriginal);
+    }
+  });
+
+  originalAudio.addEventListener('ended', () => {
+    playOriginalBtn.classList.remove('playing');
+    playOriginalBtn.textContent = '▶';
+    cancelAnimationFrame(animFrameOriginal);
+    playheadOriginal.style.left = '0';
+    
+    if (ChorusState.isLooping) {
+      originalAudio.currentTime = 0;
+      originalAudio.play();
+      playOriginalBtn.classList.add('playing');
+      playOriginalBtn.textContent = '⏸';
+      updatePlayheadOriginal();
+    }
+  });
+
+  vizOriginal.addEventListener('click', (e) => {
+    const rect = vizOriginal.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const progress = x / rect.width;
+    originalAudio.currentTime = progress * originalAudio.duration;
+    playheadOriginal.style.left = `${x}px`;
+  });
+
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      ChorusState.playbackSpeed = parseFloat(btn.dataset.speed);
+      originalAudio.playbackRate = ChorusState.playbackSpeed;
+    });
+  });
+
+  document.querySelectorAll('.listen-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.listen-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      ChorusState.listenCount = parseInt(btn.dataset.listen);
+    });
+  });
+
+  document.getElementById('loop-btn').addEventListener('click', (e) => {
+    ChorusState.isLooping = !ChorusState.isLooping;
+    e.currentTarget.classList.toggle('active', ChorusState.isLooping);
+  });
+
+  document.getElementById('studio-record-btn').addEventListener('click', toggleRecording);
+  document.getElementById('compare-btn').addEventListener('click', playComparison);
+
+  document.querySelectorAll('.viz-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const track = tab.closest('.viz-tabs').dataset.track;
+      const vizType = tab.dataset.viz;
+      
+      tab.parentElement.querySelectorAll('.viz-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      
+      const blob = track === 'original' ? ChorusState.originalAudioBlob : ChorusState.userAudioBlob;
+      const canvasId = track === 'original' ? 'canvas-original' : 'canvas-user';
+      const color = track === 'original' ? '#4ade80' : '#818cf8';
+      
+      if (blob) {
+        if (vizType === 'waveform') renderWaveform(blob, canvasId, color);
+        else if (vizType === 'spectrogram') renderSpectrogram(blob, canvasId);
+        else if (vizType === 'pitch') renderPitchContour(blob, canvasId, color);
+        else if (vizType === 'overlay') renderPitchOverlay();
+      }
+    });
+  });
+
+  document.querySelectorAll('.srs-rate-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const quality = parseInt(btn.dataset.quality);
+      handleSRSRating(ChorusState.currentSRSCard.id, quality);
+    });
+  });
+
+  setupScrubbing(vizOriginal, originalAudio);
+}
+
+function handleSRSRating(cardId, quality) {
+  chrome.storage.local.get('chorus-srs-cards', (result) => {
+    const cards = result['chorus-srs-cards'] || [];
+    const cardIndex = cards.findIndex(c => c.id === cardId);
+    
+    if (cardIndex === -1) {
+      showToast('Card not found!', 'error');
+      return;
+    }
+    
+    const card = cards[cardIndex];
+    
+    if (quality >= 3) {
+      if (card.repetition === 0) {
+        card.interval = 1;
+      } else if (card.repetition === 1) {
+        card.interval = 6;
+      } else {
+        card.interval = Math.round(card.interval * card.easeFactor);
+      }
+      card.repetition++;
+    } else {
+      card.repetition = 0;
+      card.interval = 1;
+    }
+    
+    card.easeFactor = Math.max(1.3, card.easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)));
+    card.lastReview = Date.now();
+    card.nextReview = Date.now() + (card.interval * 24 * 60 * 60 * 1000);
+    
+    cards[cardIndex] = card;
+    
+    chrome.storage.local.set({ 'chorus-srs-cards': cards }, () => {
+      const qualityLabels = ['Again', '', '', 'Hard', 'Good', 'Easy'];
+      showToast(`Rated "${qualityLabels[quality]}" - Next review in ${card.interval} day${card.interval > 1 ? 's' : ''}`, 'success');
+      
+      if (ChorusState.dueCardQueue.length > 0) {
+        ChorusState.currentDueIndex++;
+        
+        if (ChorusState.currentDueIndex < ChorusState.dueCardQueue.length) {
+          const nextCard = ChorusState.dueCardQueue[ChorusState.currentDueIndex];
+          openStudioWithSRSCard(nextCard);
+        } else {
+          showToast('🎉 Review session complete!', 'success');
+          closeSRSReview();
+        }
+      } else {
+        closeSRSReview();
+      }
+    });
+  });
+}
+
+function closeSRSReview() {
+  ChorusState.currentSRSCard = null;
+  ChorusState.isReviewingCard = false;
+  ChorusState.dueCardQueue = [];
+  ChorusState.currentDueIndex = 0;
+  closeStudio();
 }
 
 // ============================================================================
@@ -1959,7 +2450,6 @@ function setupPanelEvents() {
   const searchInput = document.getElementById('chorus-search-input');
   searchInput.addEventListener('input', (e) => filterSubtitles(e.target.value));
 
-  // Resize
   const resizeHandle = document.getElementById('chorus-resize-handle');
   let isResizing = false;
 
@@ -2342,7 +2832,6 @@ function addToQueue() {
   savePracticeQueue();
   updateQueueCount();
   
-  // Update tile UI
   document.querySelectorAll('.chorus-tile').forEach(tile => {
     const idx = parseInt(tile.dataset.index);
     if (ChorusState.selectedIndices.has(idx)) {
@@ -2425,13 +2914,11 @@ function practiceQueueItem(index) {
   ChorusState.currentQueueIndex = index;
   updateQueueProgress();
   
-  // If different video, show message
   if (item.videoId !== getVideoId()) {
     showToast('This item is from a different video', 'warning');
     return;
   }
   
-  // Select and practice
   ChorusState.selectedIndices.clear();
   ChorusState.selectedIndices.add(item.subtitleIndex);
   updateSelectionUI();
@@ -2508,7 +2995,6 @@ function closeStudio() {
   if (overlay) overlay.classList.remove('visible');
   ChorusState.isStudioOpen = false;
   
-  // Cleanup
   if (ChorusState.originalAudioUrl) {
     URL.revokeObjectURL(ChorusState.originalAudioUrl);
     ChorusState.originalAudioUrl = null;
@@ -2534,7 +3020,6 @@ async function startPractice() {
   ChorusState.capturedEndTime = lastSub.endTime;
   ChorusState.capturedSubtitleText = indices.map(i => ChorusState.subtitles[i].text).join(' ');
 
-  // Cleanup previous
   if (ChorusState.originalAudioUrl) URL.revokeObjectURL(ChorusState.originalAudioUrl);
   if (ChorusState.userAudioUrl) URL.revokeObjectURL(ChorusState.userAudioUrl);
   ChorusState.userAudioBlob = null;
@@ -2560,7 +3045,6 @@ async function startPractice() {
     ChorusState.originalAudioBlob = blob;
     ChorusState.originalAudioUrl = URL.createObjectURL(blob);
     
-    // Decode for analysis
     const audioCtx = getAudioContext();
     const arrayBuffer = await blob.arrayBuffer();
     ChorusState.originalAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
@@ -2605,13 +3089,11 @@ function renderStudioContent() {
   const content = document.getElementById('studio-content');
   
   content.innerHTML = `
-    <!-- Subtitle Display -->
     <div class="studio-subtitle-display">
       <div class="studio-subtitle-text">${ChorusState.capturedSubtitleText}</div>
       <div class="studio-subtitle-time">${formatTime(ChorusState.capturedStartTime)} - ${formatTime(ChorusState.capturedEndTime)}</div>
     </div>
 
-    <!-- Score Display -->
     <div class="score-display" id="score-display">
       <div class="score-circle" style="--score: 0">
         <span class="score-value" id="score-value">--</span>
@@ -2622,7 +3104,6 @@ function renderStudioContent() {
       </div>
     </div>
 
-    <!-- Original Track -->
     <div class="audio-track">
       <div class="track-header">
         <div class="track-label original">
@@ -2649,7 +3130,6 @@ function renderStudioContent() {
       </div>
     </div>
 
-    <!-- User Track -->
     <div class="audio-track">
       <div class="track-header">
         <div class="track-label user">
@@ -2673,7 +3153,6 @@ function renderStudioContent() {
       </div>
     </div>
 
-    <!-- Controls -->
     <div class="playback-controls">
       <div class="control-group">
         <span class="control-label">Speed</span>
@@ -2715,7 +3194,6 @@ function renderStudioContent() {
       </div>
     </div>
     
-    <!-- Queue Navigation -->
     <div class="queue-mode-header ${ChorusState.isQueueMode ? 'active' : ''}" id="studio-queue-nav">
       <div class="queue-mode-info">
         <span class="queue-mode-progress" id="studio-queue-progress">${ChorusState.currentQueueIndex + 1}/${ChorusState.practiceQueue.length}</span>
@@ -2732,7 +3210,6 @@ function renderStudioContent() {
 }
 
 function setupStudioEvents() {
-  // Original audio playback
   const originalAudio = new Audio(ChorusState.originalAudioUrl);
   const playOriginalBtn = document.getElementById('play-original');
   const vizOriginal = document.getElementById('viz-original');
@@ -2751,7 +3228,6 @@ function setupStudioEvents() {
     if (originalAudio.paused) {
       originalAudio.playbackRate = ChorusState.playbackSpeed;
       
-      // A-B Loop handling
       if (ChorusState.abLoopEnabled) {
         originalAudio.currentTime = ChorusState.abLoopStart * originalAudio.duration;
       }
@@ -2769,7 +3245,6 @@ function setupStudioEvents() {
   });
 
   originalAudio.addEventListener('timeupdate', () => {
-    // A-B Loop check
     if (ChorusState.abLoopEnabled && ChorusState.isLooping) {
       const endPos = ChorusState.abLoopEnd * originalAudio.duration;
       if (originalAudio.currentTime >= endPos) {
@@ -2793,7 +3268,6 @@ function setupStudioEvents() {
     }
   });
 
-  // Click on waveform to seek
   vizOriginal.addEventListener('click', (e) => {
     if (e.target.classList.contains('ab-handle')) return;
     const rect = vizOriginal.getBoundingClientRect();
@@ -2803,7 +3277,6 @@ function setupStudioEvents() {
     playheadOriginal.style.left = `${x}px`;
   });
 
-  // Speed buttons
   document.querySelectorAll('.speed-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
@@ -2813,7 +3286,6 @@ function setupStudioEvents() {
     });
   });
 
-  // Listen count buttons
   document.querySelectorAll('.listen-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.listen-btn').forEach(b => b.classList.remove('active'));
@@ -2822,13 +3294,11 @@ function setupStudioEvents() {
     });
   });
 
-  // Loop button
   document.getElementById('loop-btn').addEventListener('click', (e) => {
     ChorusState.isLooping = !ChorusState.isLooping;
     e.currentTarget.classList.toggle('active', ChorusState.isLooping);
   });
 
-  // A-B Loop button
   document.getElementById('ab-loop-btn').addEventListener('click', (e) => {
     ChorusState.abLoopEnabled = !ChorusState.abLoopEnabled;
     e.currentTarget.classList.toggle('active', ChorusState.abLoopEnabled);
@@ -2849,13 +3319,9 @@ function setupStudioEvents() {
     }
   });
 
-  // A-B Loop handles
   setupABLoopHandles(vizOriginal);
-
-  // Record button
   document.getElementById('studio-record-btn').addEventListener('click', toggleRecording);
 
-  // Download buttons
   document.getElementById('download-original').addEventListener('click', () => {
     downloadAudio(ChorusState.originalAudioBlob, 'target-audio');
   });
@@ -2863,10 +3329,8 @@ function setupStudioEvents() {
     if (ChorusState.userAudioBlob) downloadAudio(ChorusState.userAudioBlob, 'my-recording');
   });
 
-  // Compare button
   document.getElementById('compare-btn').addEventListener('click', playComparison);
 
-  // Visualization tabs
   document.querySelectorAll('.viz-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       const track = tab.closest('.viz-tabs').dataset.track;
@@ -2888,13 +3352,11 @@ function setupStudioEvents() {
     });
   });
 
-  // Queue navigation
   if (ChorusState.isQueueMode) {
     document.getElementById('queue-prev')?.addEventListener('click', prevQueueItem);
     document.getElementById('queue-next')?.addEventListener('click', nextQueueItem);
   }
 
-  // Scrubbing (slow-mo)
   setupScrubbing(vizOriginal, originalAudio);
 }
 
@@ -2965,11 +3427,9 @@ function setupScrubbing(container, audio) {
     const rect = container.getBoundingClientRect();
     const progress = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     
-    // Update playhead visually
     const playhead = container.querySelector('.playhead');
     if (playhead) playhead.style.left = `${progress * rect.width}px`;
     
-    // Play small chunk at slow speed
     audio.currentTime = progress * audio.duration;
     audio.playbackRate = 0.5;
     
@@ -2996,7 +3456,6 @@ async function toggleRecording() {
   const label = document.getElementById('record-label');
   
   if (ChorusState.isRecording) {
-    // Stop
     if (ChorusState.mediaRecorder?.state === 'recording') {
       ChorusState.mediaRecorder.stop();
     }
@@ -3004,7 +3463,6 @@ async function toggleRecording() {
     label.textContent = 'Record';
     ChorusState.isRecording = false;
   } else {
-    // Start
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       ChorusState.recordingStream = stream;
@@ -3023,7 +3481,6 @@ async function toggleRecording() {
         ChorusState.userAudioBlob = blob;
         ChorusState.userAudioUrl = URL.createObjectURL(blob);
         
-        // Decode for analysis
         const audioCtx = getAudioContext();
         const arrayBuffer = await blob.arrayBuffer();
         ChorusState.userAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
@@ -3032,7 +3489,6 @@ async function toggleRecording() {
         stream.getTracks().forEach(track => track.stop());
       };
 
-      // Setup real-time visualization
       setupRealtimeWaveform(stream);
 
       ChorusState.mediaRecorder.start();
@@ -3234,13 +3690,8 @@ function onUserRecordingComplete() {
   });
 
   renderWaveform(ChorusState.userAudioBlob, 'canvas-user', '#818cf8');
-  
-  // Calculate and show score
   calculatePronunciationScore();
-  
-  // Add to history
   addToHistory(ChorusState.lastScore);
-  
   showToast('Recording saved!', 'success');
 }
 
@@ -3254,7 +3705,6 @@ function calculatePronunciationScore() {
   const originalData = ChorusState.originalAudioBuffer.getChannelData(0);
   const userData = ChorusState.userAudioBuffer.getChannelData(0);
   
-  // Simple spectral similarity using cross-correlation
   const windowSize = 2048;
   const hopSize = 512;
   
@@ -3266,7 +3716,6 @@ function calculatePronunciationScore() {
   for (let i = 0; i < numWindows; i++) {
     const offset = i * hopSize;
     
-    // Get RMS energy
     let origEnergy = 0, userEnergy = 0;
     for (let j = 0; j < windowSize; j++) {
       origEnergy += originalData[offset + j] ** 2;
@@ -3275,22 +3724,18 @@ function calculatePronunciationScore() {
     origEnergy = Math.sqrt(origEnergy / windowSize);
     userEnergy = Math.sqrt(userEnergy / windowSize);
     
-    // Skip silent regions
     if (origEnergy < 0.01 && userEnergy < 0.01) continue;
     
-    // Compute correlation
     let corr = 0;
     for (let j = 0; j < windowSize; j++) {
       corr += originalData[offset + j] * userData[offset + j];
     }
     corr /= windowSize;
     
-    // Normalize
     const similarity = Math.min(1, Math.max(0, (corr / (origEnergy * userEnergy + 0.001) + 1) / 2));
     similarities.push(similarity);
   }
   
-  // Calculate average score
   const avgScore = similarities.length > 0 
     ? similarities.reduce((a, b) => a + b, 0) / similarities.length 
     : 0;
@@ -3298,7 +3743,6 @@ function calculatePronunciationScore() {
   const finalScore = Math.round(avgScore * 100);
   ChorusState.lastScore = finalScore;
   
-  // Display score
   const scoreDisplay = document.getElementById('score-display');
   const scoreValue = document.getElementById('score-value');
   const scoreFeedback = document.getElementById('score-feedback');
@@ -3308,7 +3752,6 @@ function calculatePronunciationScore() {
   scoreValue.textContent = `${finalScore}%`;
   scoreCircle.style.setProperty('--score', finalScore);
   
-  // Feedback based on score
   if (finalScore >= 80) {
     scoreFeedback.textContent = 'Excellent! Native-like pronunciation! 🌟';
     scoreValue.style.color = '#4ade80';
@@ -3351,7 +3794,6 @@ async function renderWaveform(blob, canvasId, color) {
     const samples = displayWidth * 2;
     const step = Math.floor(data.length / samples);
     
-    // Background
     const bgGradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
     bgGradient.addColorStop(0, '#1e1e3f');
     bgGradient.addColorStop(0.5, '#1a1a35');
@@ -3359,7 +3801,6 @@ async function renderWaveform(blob, canvasId, color) {
     ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, displayWidth, displayHeight);
     
-    // Grid
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
@@ -3370,7 +3811,6 @@ async function renderWaveform(blob, canvasId, color) {
       ctx.stroke();
     }
     
-    // Waveform
     const waveGradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
     waveGradient.addColorStop(0, color);
     waveGradient.addColorStop(0.5, color);
@@ -3404,13 +3844,11 @@ async function renderWaveform(blob, canvasId, color) {
     
     ctx.stroke();
     
-    // Glow
     ctx.shadowColor = color;
     ctx.shadowBlur = 4;
     ctx.stroke();
     ctx.shadowBlur = 0;
     
-    // Center line
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -3418,7 +3856,6 @@ async function renderWaveform(blob, canvasId, color) {
     ctx.lineTo(displayWidth, centerY);
     ctx.stroke();
     
-    // Timeline
     const duration = audioBuffer.duration;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.fillRect(0, displayHeight - 16, displayWidth, 16);
@@ -3498,7 +3935,6 @@ async function renderSpectrogram(blob, canvasId) {
       }
     }
     
-    // Timeline
     const duration = audioBuffer.duration;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.fillRect(0, displayHeight - 16, displayWidth, 16);
@@ -3546,14 +3982,12 @@ async function renderPitchContour(blob, canvasId, color) {
     const frameSize = Math.floor(sampleRate * 0.03);
     const hopSize = Math.floor(frameSize / 2);
     
-    // Background
     const bgGradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
     bgGradient.addColorStop(0, '#1e1e3f');
     bgGradient.addColorStop(1, '#16162a');
     ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, displayWidth, displayHeight);
     
-    // Grid
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
@@ -3564,7 +3998,6 @@ async function renderPitchContour(blob, canvasId, color) {
       ctx.stroke();
     }
     
-    // Detect pitch
     const pitches = [];
     for (let i = 0; i < data.length - frameSize; i += hopSize) {
       const frame = data.slice(i, i + frameSize);
@@ -3576,7 +4009,6 @@ async function renderPitchContour(blob, canvasId, color) {
     const minPitch = Math.min(...validPitches) || 80;
     const maxPitch = Math.max(...validPitches) || 400;
     
-    // Draw pitch
     ctx.strokeStyle = color;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
@@ -3599,20 +4031,17 @@ async function renderPitchContour(blob, canvasId, color) {
     }
     ctx.stroke();
     
-    // Glow
     ctx.shadowColor = color;
     ctx.shadowBlur = 6;
     ctx.stroke();
     ctx.shadowBlur = 0;
     
-    // Labels
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     ctx.font = '9px SF Mono, Consolas, monospace';
     ctx.textAlign = 'left';
     ctx.fillText(`${Math.round(maxPitch)}Hz`, 4, 12);
     ctx.fillText(`${Math.round(minPitch)}Hz`, 4, displayHeight - 22);
     
-    // Timeline
     const duration = audioBuffer.duration;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.fillRect(0, displayHeight - 16, displayWidth, 16);
@@ -3653,14 +4082,12 @@ async function renderPitchOverlay() {
   canvas.style.height = displayHeight + 'px';
   ctx.scale(dpr, dpr);
 
-  // Background
   const bgGradient = ctx.createLinearGradient(0, 0, 0, displayHeight);
   bgGradient.addColorStop(0, '#1e1e3f');
   bgGradient.addColorStop(1, '#16162a');
   ctx.fillStyle = bgGradient;
   ctx.fillRect(0, 0, displayWidth, displayHeight);
 
-  // Grid
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
   for (let i = 0; i <= 4; i++) {
     const y = ((displayHeight - 16) / 4) * i;
@@ -3670,7 +4097,6 @@ async function renderPitchOverlay() {
     ctx.stroke();
   }
 
-  // Extract pitches for both
   const originalPitches = extractPitches(ChorusState.originalAudioBuffer);
   const userPitches = extractPitches(ChorusState.userAudioBuffer);
   
@@ -3678,13 +4104,9 @@ async function renderPitchOverlay() {
   const minPitch = Math.min(...allValid) || 80;
   const maxPitch = Math.max(...allValid) || 400;
   
-  // Draw original pitch (green)
   drawPitchLine(ctx, originalPitches, displayWidth, displayHeight, minPitch, maxPitch, '#4ade80');
-  
-  // Draw user pitch (purple)
   drawPitchLine(ctx, userPitches, displayWidth, displayHeight, minPitch, maxPitch, '#818cf8');
   
-  // Legend
   ctx.fillStyle = '#4ade80';
   ctx.fillRect(displayWidth - 100, 8, 12, 12);
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -3696,7 +4118,6 @@ async function renderPitchOverlay() {
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.fillText('You', displayWidth - 84, 33);
   
-  // Timeline
   ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
   ctx.fillRect(0, displayHeight - 16, displayWidth, 16);
 }
@@ -3777,7 +4198,6 @@ async function playComparison() {
   originalAudio.playbackRate = ChorusState.playbackSpeed;
   userAudio.playbackRate = ChorusState.playbackSpeed;
   
-  // Animate playheads
   const vizOriginal = document.getElementById('viz-original');
   const vizUser = document.getElementById('viz-user');
   const playheadOriginal = document.getElementById('playhead-original');
@@ -3836,13 +4256,11 @@ function downloadAudio(blob, filename) {
 
 function showHistoryModal() {
   showToast(`You have ${ChorusState.practiceHistory.length} practice sessions recorded`, 'info');
-  // Full modal implementation would go here
 }
 
 function showSRSModal() {
   const dueCount = getDueCards().length;
   showToast(`${ChorusState.srsCards.length} flashcards total, ${dueCount} due for review`, 'info');
-  // Full modal implementation would go here
 }
 
 // ============================================================================
@@ -3870,17 +4288,44 @@ function setupHotkey() {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'getStatus') {
+    sendResponse({ isActive: ChorusState.isVisible });
+    return true;
+  }
+  
   if (message.action === 'startChorus') {
     showPanel();
     loadSubtitles();
+    sendResponse({ status: 'ok' });
+    return true;
   }
+  
   if (message.action === 'stopChorus') {
     hidePanel();
+    sendResponse({ status: 'ok' });
+    return true;
   }
+  
   if (message.action === 'subtitlesFetched') {
     renderSubtitles(message.data);
+    sendResponse({ status: 'ok' });
+    return true;
   }
+  
+  if (message.action === 'openSRSCard') {
+    openStudioWithSRSCard(message.card);
+    sendResponse({ status: 'ok' });
+    return true;
+  }
+  
+  if (message.action === 'startSRSReview') {
+    startSRSReviewMode(message.cards);
+    sendResponse({ status: 'ok' });
+    return true;
+  }
+  
   sendResponse({ status: 'ok' });
+  return true;
 });
 
 async function loadSubtitles() {

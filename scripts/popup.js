@@ -3,38 +3,38 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  let isChorusActive = false;
   const chorusBtn = document.getElementById('chorusBtn');
+
+  // Check actual status when popup opens
+  checkChorusStatus();
 
   // Main toggle button
   if (chorusBtn) {
     chorusBtn.addEventListener('click', () => {
-      isChorusActive = !isChorusActive;
-      
-      // Update button appearance
-      chorusBtn.textContent = isChorusActive ? '✓ Chorus Mode Active' : 'Activate Chorus Mode';
-      chorusBtn.classList.toggle('active', isChorusActive);
-      
-      // Update status indicator
-      const statusEl = document.getElementById('status-indicator');
-      if (statusEl) {
-        statusEl.textContent = isChorusActive ? '🟢 Active on this tab' : '⚪ Inactive';
-        statusEl.className = 'status-indicator ' + (isChorusActive ? 'active' : '');
-      }
-
-      chrome.runtime.sendMessage({ action: isChorusActive ? 'startChorus' : 'stopChorus' });
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]?.id) {
-          chrome.tabs.sendMessage(tabs[0].id, { action: isChorusActive ? 'startChorus' : 'stopChorus' }, (response) => {
-            // Check if we got a response (content script is loaded)
+        if (!tabs[0]?.id) return;
+        
+        // Query current status first
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'getStatus' }, (response) => {
+          if (chrome.runtime.lastError) {
+            updateStatusUI(false, 'Not on a YouTube video');
+            return;
+          }
+          
+          const currentlyActive = response?.isActive || false;
+          const newState = !currentlyActive;
+          
+          // Send toggle command
+          chrome.tabs.sendMessage(tabs[0].id, { 
+            action: newState ? 'startChorus' : 'stopChorus' 
+          }, (res) => {
             if (chrome.runtime.lastError) {
-              if (statusEl) {
-                statusEl.textContent = '⚠️ Not on a YouTube video';
-                statusEl.className = 'status-indicator warning';
-              }
+              updateStatusUI(false, 'Not on a YouTube video');
+            } else {
+              updateStatusUI(newState);
             }
           });
-        }
+        });
       });
     });
   }
@@ -94,6 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('click', (e) => {
     // Delete SRS card
     if (e.target.classList.contains('srs-delete-btn')) {
+      e.stopPropagation();
       const cardId = e.target.dataset.id;
       if (cardId && confirm('Delete this flashcard?')) {
         chrome.storage.local.get('chorus-srs-cards', (result) => {
@@ -102,6 +103,35 @@ document.addEventListener('DOMContentLoaded', () => {
             loadSRS();
             loadStats();
           });
+        });
+      }
+    }
+
+    // Open individual SRS card for review
+    if (e.target.classList.contains('srs-review-btn')) {
+      const cardId = e.target.dataset.id;
+      if (cardId) {
+        chrome.storage.local.get('chorus-srs-cards', (result) => {
+          const cards = result['chorus-srs-cards'] || [];
+          const card = cards.find(c => c.id === cardId);
+          if (card) {
+            openSRSCardInStudio(card);
+          }
+        });
+      }
+    }
+
+    // Click on SRS card row to review
+    if (e.target.closest('.srs-card') && !e.target.classList.contains('srs-delete-btn')) {
+      const cardEl = e.target.closest('.srs-card');
+      const cardId = cardEl.dataset.id;
+      if (cardId) {
+        chrome.storage.local.get('chorus-srs-cards', (result) => {
+          const cards = result['chorus-srs-cards'] || [];
+          const card = cards.find(c => c.id === cardId);
+          if (card) {
+            openSRSCardInStudio(card);
+          }
         });
       }
     }
@@ -120,12 +150,114 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
     }
+
+    // Start SRS review mode (review all due)
+    if (e.target.id === 'start-srs-review' || e.target.closest('#start-srs-review')) {
+      startSRSReviewMode();
+    }
   });
 
   // Initial load
   loadStats();
   loadHistory();
 });
+
+// ============================================================================
+// STATUS MANAGEMENT
+// ============================================================================
+
+function checkChorusStatus() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]?.id) {
+      updateStatusUI(false, 'No active tab');
+      return;
+    }
+    
+    chrome.tabs.sendMessage(tabs[0].id, { action: 'getStatus' }, (response) => {
+      if (chrome.runtime.lastError) {
+        updateStatusUI(false, 'Not on a YouTube video');
+        return;
+      }
+      
+      updateStatusUI(response?.isActive || false);
+    });
+  });
+}
+
+function updateStatusUI(isActive, customMessage = null) {
+  const chorusBtn = document.getElementById('chorusBtn');
+  const statusEl = document.getElementById('status-indicator');
+  
+  if (chorusBtn) {
+    chorusBtn.textContent = isActive ? '✓ Chorus Mode Active' : 'Activate Chorus Mode';
+    chorusBtn.classList.toggle('active', isActive);
+  }
+  
+  if (statusEl) {
+    if (customMessage) {
+      statusEl.textContent = `⚠️ ${customMessage}`;
+      statusEl.className = 'status-indicator warning';
+    } else {
+      statusEl.textContent = isActive ? '🟢 Active on this tab' : '⚪ Inactive';
+      statusEl.className = 'status-indicator ' + (isActive ? 'active' : '');
+    }
+  }
+}
+
+// ============================================================================
+// SRS FUNCTIONS
+// ============================================================================
+
+function openSRSCardInStudio(card) {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]?.id) {
+      alert('Please open a YouTube video first');
+      return;
+    }
+    
+    chrome.tabs.sendMessage(tabs[0].id, { 
+      action: 'openSRSCard',
+      card: card
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        alert('Please open any YouTube video to review this card');
+      } else {
+        window.close(); // Close popup
+      }
+    });
+  });
+}
+
+function startSRSReviewMode() {
+  chrome.storage.local.get('chorus-srs-cards', (result) => {
+    const cards = result['chorus-srs-cards'] || [];
+    const now = Date.now();
+    const dueCards = cards.filter(c => c.nextReview <= now);
+    
+    if (dueCards.length === 0) {
+      alert('No cards due for review!');
+      return;
+    }
+    
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs[0]?.id) {
+        alert('Please open a YouTube video first');
+        return;
+      }
+      
+      chrome.tabs.sendMessage(tabs[0].id, { 
+        action: 'startSRSReview',
+        cards: dueCards
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          alert('Please open any YouTube video to start review');
+        } else {
+          window.close(); // Close popup
+        }
+      });
+    });
+  });
+}
 
 // ============================================================================
 // DATA LOADING FUNCTIONS
@@ -229,25 +361,42 @@ function loadSRS() {
       }
       
       const now = Date.now();
+      const dueCards = cards.filter(c => c.nextReview <= now);
       const sorted = [...cards].sort((a, b) => a.nextReview - b.nextReview);
       
-      container.innerHTML = sorted.slice(0, 20).map(card => {
+      // Review button header
+      let html = '';
+      if (dueCards.length > 0) {
+        html += `
+          <div class="srs-review-start">
+            <button id="start-srs-review" class="review-all-btn">
+              🎯 Review ${dueCards.length} Due Card${dueCards.length > 1 ? 's' : ''}
+            </button>
+          </div>
+        `;
+      }
+      
+      // Card list
+      html += sorted.slice(0, 20).map(card => {
         const isDue = card.nextReview <= now;
         const dueText = isDue ? 'Due now' : formatRelativeTime(card.nextReview, true);
         
         return `
-          <div class="srs-card ${isDue ? 'due' : ''}">
+          <div class="srs-card ${isDue ? 'due' : ''}" data-id="${card.id}">
             <div class="srs-text">${escapeHtml(truncate(card.text || '', 40))}</div>
             <div class="srs-meta">
               <span class="srs-due">${dueText}</span>
               <span>${card.interval || 1}d interval</span>
             </div>
             <div class="srs-actions">
-              <button class="srs-delete-btn" data-id="${card.id}">🗑️ Delete</button>
+              <button class="srs-review-btn" data-id="${card.id}">▶ Review</button>
+              <button class="srs-delete-btn" data-id="${card.id}">🗑️</button>
             </div>
           </div>
         `;
       }).join('');
+      
+      container.innerHTML = html;
     });
   } catch (e) {
     console.error('loadSRS error:', e);
