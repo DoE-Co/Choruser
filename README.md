@@ -58,6 +58,12 @@ While the project is still under active development, the current version include
 * Browser Extension APIs
 * YouTube DOM + subtitle parsing
 
+<img width="361" height="597" alt="image" src="https://github.com/user-attachments/assets/ea3d2246-904a-4962-955d-dc52b77c48ca" />
+<img width="1498" height="774" alt="image" src="https://github.com/user-attachments/assets/8234e134-b475-4ec9-9909-f6450d99a101" />
+<img width="1005" height="702" alt="image" src="https://github.com/user-attachments/assets/d78a1fe1-0959-4eab-b1be-72b29dc555c6" />
+<img width="361" height="293" alt="image" src="https://github.com/user-attachments/assets/03013bb3-6301-4643-b8e0-ad64abc915a1" />
+
+
 ---
 
 ##  **Motivation**
@@ -69,9 +75,7 @@ Shadowing/Chorusing is one of the most effective techniques for second-language 
 * intonation
 * fluidity
 
-But learners often struggle to know *how close* they are to the target prosody.
-
-Choruser aims to fill that gap by providing **visual, prosody-focused feedback**, especially for learners of Japanese where pitch accent plays a crucial role but is under-taught in traditional classrooms.
+This project aims to help make shadowing more efficent. 
 
 ---
 
